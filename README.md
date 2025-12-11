@@ -69,16 +69,18 @@ with run("model.xlsx", raise_on_errors=True) as ctx:
 
 The context object provides:
 
-| Property/Method               | Description                                 |
-| ----------------------------- | ------------------------------------------- |
-| `workbook` / `wb`             | The workbook proxy for editing and reading  |
-| `active`                      | The active worksheet proxy                  |
-| `sheet(name)`                 | Get worksheet by name                       |
-| `create_sheet(name)`          | Create new worksheet                        |
-| `sync(raise_on_errors=False)` | Save, recalc via LibreOffice, reload        |
-| `read_value(sheet, cell)`     | Helper to read computed value               |
-| `read_range(sheet, range)`    | Helper to read computed values from range   |
-| `values`                      | (Advanced) Raw workbook with data_only=True |
+| Property/Method                  | Description                                 |
+| -------------------------------- | ------------------------------------------- |
+| `workbook` / `wb`                | The workbook proxy for editing and reading  |
+| `active`                         | The active worksheet proxy                  |
+| `sheet(name)`                    | Get worksheet by name                       |
+| `create_sheet(name)`             | Create new worksheet                        |
+| `sync(raise_on_errors=False)`    | Save, recalc via LibreOffice, reload        |
+| `read_value(sheet, cell)`        | Helper to read computed value               |
+| `read_range(sheet, range)`       | Helper to read computed values from range   |
+| `apply_style(sheet, range, ...)` | Apply styles (font, fill, etc.) to a range  |
+| `get_formulas(sheet=None)`       | Get all formulas in sheet or workbook       |
+| `values`                         | (Advanced) Raw workbook with data_only=True |
 
 ### `SyncResult`
 
@@ -86,10 +88,18 @@ Returned by `sync()`:
 
 ```python
 result = ctx.sync()
-result.success      # bool - True if no formula errors
-result.total_errors # int - count of errors
-result.errors       # dict - {'#REF!': ['Sheet1!A1'], ...}
+result.success       # bool - True if no formula errors
+result.total_errors  # int - count of errors
+result.errors        # dict - {'#REF!': ['Sheet1!A1'], ...}
+result.error_details # list[ErrorDetail] - detailed error info
 result.raise_on_errors()  # raise FormulaError if errors exist
+
+# ErrorDetail provides formula context for debugging
+for detail in result.error_details:
+    detail.location   # 'Sheet1!A1'
+    detail.error      # '#DIV/0!'
+    detail.formula    # '=B1/C1'
+    detail.neighbors  # {'Sheet1!B1': 100, 'Sheet1!C1': 0}
 ```
 
 ### Exceptions

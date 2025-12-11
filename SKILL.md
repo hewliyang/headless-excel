@@ -116,10 +116,12 @@ with run("output.xlsx", create=True) as ctx:
     ws['A3'] = 200
     ws['A4'] = '=SUM(A2:A3)'
 
-    # Formatting
+    # Cell-by-cell formatting
     ws['A1'].font = Font(bold=True, color='0000FF')
     ws['A1'].fill = PatternFill('solid', start_color='FFFF00')
-    ws['A4'].font = Font(color='000000')
+
+    # Batch styling for ranges
+    ctx.apply_style("Sheet", "A2:A4", font=Font(color='000000'), number_format='#,##0')
 
     # Column width
     ws.column_dimensions['A'].width = 20
@@ -185,14 +187,16 @@ except FormulaError as e:
     print(f"Formula errors found: {e.errors}")
     # {'#NAME?': ['Sheet1!A1']}
 
-# Manual error checking
+# Manual error checking with detailed context
 with run("model.xlsx", auto_sync=False) as ctx:
     ws = ctx.active
     ws['A1'] = '=B1/C1'  # Potential #DIV/0!
 
     result = ctx.sync()
     if not result.success:
-        print(f"Errors: {result.errors}")
+        for detail in result.error_details:
+            print(f"{detail.error} at {detail.location}: {detail.formula}")
+            print(f"  Referenced values: {detail.neighbors}")
         # Fix errors...
         ws['C1'] = 1
         result = ctx.sync()
@@ -247,6 +251,8 @@ with run("output.xlsx") as ctx:
 - Formula errors are automatically detected on sync
 - Use `auto_sync=False` for manual control over recalculation timing
 - Use `raise_on_errors=True` to enforce zero-error requirement
+- Use `ctx.get_formulas("Sheet1")` to inspect all formulas in a sheet
+- Use `ctx.apply_style("Sheet1", "A1:G5", ...)` for batch styling
 - Cell indices are 1-based (A1, not 0,0)
 - Build worksheets incrementally: prefer heredocs for multi-step cell setup, keep each heredoc under 100 lines, and call `ctx.sync()` after each block to catch errors before they compound
 

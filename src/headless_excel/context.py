@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -9,12 +10,34 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection
 
 from headless_excel.errors import FormulaError, RecalcError, SyncError
 from headless_excel.proxy import WorkbookProxy, WorksheetProxy
 from headless_excel.recalc import recalc
 
 T = TypeVar("T")
+
+CELL_REF_PATTERN = re.compile(
+    r"(?<![A-Za-z_])(?:([A-Za-z_][A-Za-z0-9_]*!)?)?\$?([A-Z]{1,3})\$?([1-9][0-9]*)(?![A-Za-z0-9_])"
+)
+
+
+@dataclass
+class ErrorDetail:
+    """Detailed information about a formula error.
+
+    Attributes:
+        location: Cell location (e.g., 'Sheet1!A1')
+        error: Error type (e.g., '#DIV/0!')
+        formula: The formula that caused the error
+        neighbors: Values of cells referenced in the formula
+    """
+
+    location: str
+    error: str
+    formula: str | None = None
+    neighbors: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -25,11 +48,13 @@ class SyncResult:
         success: Whether sync completed without formula errors
         total_errors: Number of formula errors found
         errors: Dict mapping error type to list of cell locations
+        error_details: List of detailed error information (when available)
     """
 
     success: bool
     total_errors: int = 0
     errors: dict[str, list[str]] = field(default_factory=dict)
+    error_details: list[ErrorDetail] = field(default_factory=list)
 
     def raise_on_errors(self) -> None:
         """Raise FormulaError if any errors were found."""
@@ -173,13 +198,16 @@ class ExcelContext:
 
         # Build sync result
         errors: dict[str, list[str]] = {}
-        for err_type, details in result.get("error_summary", {}).items():
-            errors[err_type] = details.get("locations", [])
+        for err_type, err_info in result.get("error_summary", {}).items():
+            errors[err_type] = err_info.get("locations", [])
+
+        error_details = self._build_error_details(errors)
 
         sync_result = SyncResult(
             success=result.get("status") == "success",
             total_errors=result.get("total_errors", 0),
             errors=errors,
+            error_details=error_details,
         )
 
         if raise_on_errors:
@@ -219,6 +247,169 @@ class ExcelContext:
         for row in ws[range_ref]:
             rows.append([cell.value for cell in row])
         return rows
+
+    def apply_style(
+        self,
+        sheet: str,
+        range_ref: str,
+        font: Font | None = None,
+        fill: PatternFill | None = None,
+        alignment: Alignment | None = None,
+        border: Border | None = None,
+        protection: Protection | None = None,
+        number_format: str | None = None,
+    ) -> None:
+        """Apply styles to a range of cells.
+
+        Args:
+            sheet: Sheet name
+            range_ref: Cell or range reference (e.g., "A1" or "A1:G5")
+            font: Font style to apply
+            fill: Fill/background style to apply
+            alignment: Alignment style to apply
+            border: Border style to apply
+            protection: Protection settings to apply
+            number_format: Number format string (e.g., '#,##0;(#,##0);-')
+        """
+        if self._workbook is None:
+            raise RuntimeError("Context not initialized")
+
+        self._dirty = True
+        ws = self._workbook[sheet]
+        cells = ws[range_ref]
+
+        if not isinstance(cells, tuple):
+            cells = ((cells,),)
+
+        for row in cells:
+            for cell in row:
+                if font is not None:
+                    cell.font = font
+                if fill is not None:
+                    cell.fill = fill
+                if alignment is not None:
+                    cell.alignment = alignment
+                if border is not None:
+                    cell.border = border
+                if protection is not None:
+                    cell.protection = protection
+                if number_format is not None:
+                    cell.number_format = number_format
+
+    def get_formulas(self, sheet: str | None = None) -> dict[str, str]:
+        """Get all formulas in a sheet or the entire workbook.
+
+        Args:
+            sheet: Sheet name, or None for all sheets
+
+        Returns:
+            Dict mapping cell location to formula string.
+            Keys are 'SheetName!A1' format when querying all sheets,
+            or just 'A1' format when querying a single sheet.
+        """
+        if self._workbook is None:
+            raise RuntimeError("Context not initialized")
+
+        formulas: dict[str, str] = {}
+        sheets = [sheet] if sheet else self._workbook.sheetnames
+
+        for sheet_name in sheets:
+            ws = self._workbook[sheet_name]
+            for row in ws.iter_rows():
+                for cell in row:
+                    if (
+                        cell.value is not None
+                        and isinstance(cell.value, str)
+                        and cell.value.startswith("=")
+                    ):
+                        if sheet:
+                            formulas[cell.coordinate] = cell.value
+                        else:
+                            formulas[f"{sheet_name}!{cell.coordinate}"] = cell.value
+
+        return formulas
+
+    def _extract_cell_refs(self, formula: str, default_sheet: str) -> list[str]:
+        """Extract cell references from a formula.
+
+        Args:
+            formula: Formula string (e.g., '=B1/C1' or '=Sheet2!A1+B1')
+            default_sheet: Default sheet name for unqualified references
+
+        Returns:
+            List of fully qualified cell references (e.g., ['Sheet1!B1', 'Sheet1!C1'])
+        """
+        refs = []
+        for match in CELL_REF_PATTERN.finditer(formula):
+            sheet_prefix, col, row = match.groups()
+            if sheet_prefix:
+                sheet_name = sheet_prefix.rstrip("!")
+            else:
+                sheet_name = default_sheet
+            refs.append(f"{sheet_name}!{col}{row}")
+        return refs
+
+    def _build_error_details(
+        self, error_locations: dict[str, list[str]]
+    ) -> list[ErrorDetail]:
+        """Build detailed error information for each error location.
+
+        Args:
+            error_locations: Dict mapping error type to list of locations
+
+        Returns:
+            List of ErrorDetail with formula and neighbor information
+        """
+        if self._workbook is None or self._values_workbook is None:
+            return []
+
+        details = []
+        for error_type, locations in error_locations.items():
+            for location in locations:
+                if "!" in location:
+                    sheet_name, cell_ref = location.split("!", 1)
+                else:
+                    sheet_name = (
+                        self._workbook.active.title
+                        if self._workbook.active
+                        else "Sheet1"
+                    )
+                    cell_ref = location
+
+                formula = None
+                neighbors: dict[str, Any] = {}
+
+                try:
+                    formula_ws = self._workbook[sheet_name]
+                    formula_cell = formula_ws[cell_ref]
+                    if (
+                        formula_cell.value
+                        and isinstance(formula_cell.value, str)
+                        and formula_cell.value.startswith("=")
+                    ):
+                        formula = formula_cell.value
+
+                        cell_refs = self._extract_cell_refs(formula, sheet_name)
+                        for ref in cell_refs:
+                            ref_sheet, ref_cell = ref.split("!", 1)
+                            try:
+                                val_ws = self._values_workbook[ref_sheet]
+                                neighbors[ref] = val_ws[ref_cell].value
+                            except (KeyError, AttributeError):
+                                neighbors[ref] = None
+                except (KeyError, AttributeError):
+                    pass
+
+                details.append(
+                    ErrorDetail(
+                        location=location,
+                        error=error_type,
+                        formula=formula,
+                        neighbors=neighbors,
+                    )
+                )
+
+        return details
 
     def close(self) -> None:
         """Close both workbooks."""
