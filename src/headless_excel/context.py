@@ -10,7 +10,14 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection
+from openpyxl.styles import (
+    Alignment,
+    Border,
+    Font,
+    GradientFill,
+    PatternFill,
+    Protection,
+)
 
 from headless_excel.errors import FormulaError, RecalcError, SyncError
 from headless_excel.proxy import WorkbookProxy, WorksheetProxy
@@ -254,6 +261,7 @@ class ExcelContext:
         range_ref: str,
         font: Font | None = None,
         fill: PatternFill | None = None,
+        gradient_fill: GradientFill | None = None,
         alignment: Alignment | None = None,
         border: Border | None = None,
         protection: Protection | None = None,
@@ -265,11 +273,16 @@ class ExcelContext:
             sheet: Sheet name
             range_ref: Cell or range reference (e.g., "A1" or "A1:G5")
             font: Font style to apply
-            fill: Fill/background style to apply
+            fill: Fill/background style to apply (PatternFill)
+            gradient_fill: Gradient fill style to apply (GradientFill)
             alignment: Alignment style to apply
             border: Border style to apply
             protection: Protection settings to apply
             number_format: Number format string (e.g., '#,##0;(#,##0);-')
+
+        Note:
+            Only one of 'fill' or 'gradient_fill' should be specified.
+            If both are provided, gradient_fill takes precedence.
         """
         if self._workbook is None:
             raise RuntimeError("Context not initialized")
@@ -285,7 +298,9 @@ class ExcelContext:
             for cell in row:
                 if font is not None:
                     cell.font = font
-                if fill is not None:
+                if gradient_fill is not None:
+                    cell.fill = gradient_fill
+                elif fill is not None:
                     cell.fill = fill
                 if alignment is not None:
                     cell.alignment = alignment

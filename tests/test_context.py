@@ -3,7 +3,15 @@
 from pathlib import Path
 
 import pytest
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Side
+from openpyxl.styles import (
+    Alignment,
+    Border,
+    Font,
+    GradientFill,
+    PatternFill,
+    Protection,
+    Side,
+)
 
 from headless_excel import ErrorDetail, ExcelContext, FormulaError, SyncResult, run
 
@@ -158,6 +166,55 @@ class TestApplyStyle:
 
         with ExcelContext(path) as ctx:
             assert ctx.active["A1"].fill.start_color.rgb == "00FFFF00"
+
+    def test_apply_gradient_fill(self, tmp_path: Path):
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = "Gradient"
+            gradient = GradientFill(stop=["FF0000", "0000FF"])
+            ctx.apply_style("Sheet", "A1", gradient_fill=gradient)
+            ctx.workbook.save(path)
+
+        with ExcelContext(path) as ctx:
+            cell = ctx.active["A1"]
+            # fill is wrapped in StyleProxy, so check type attribute
+            assert cell.fill.type == "linear"  # GradientFill type
+            assert len(cell.fill.stop) == 2
+            assert cell.fill.stop[0].color.rgb == "00FF0000"
+            assert cell.fill.stop[1].color.rgb == "000000FF"
+
+    def test_apply_gradient_fill_to_range(self, tmp_path: Path):
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            for col in ["A", "B", "C"]:
+                ctx.active[f"{col}1"] = f"Gradient {col}"
+            gradient = GradientFill(stop=["00FF00", "FFFF00"], degree=90)
+            ctx.apply_style("Sheet", "A1:C1", gradient_fill=gradient)
+            ctx.workbook.save(path)
+
+        with ExcelContext(path) as ctx:
+            for col in ["A", "B", "C"]:
+                cell = ctx.active[f"{col}1"]
+                assert cell.fill.type == "linear"
+                assert cell.fill.degree == 90
+                assert cell.fill.stop[0].color.rgb == "0000FF00"
+                assert cell.fill.stop[1].color.rgb == "00FFFF00"
+
+    def test_gradient_fill_takes_precedence_over_fill(self, tmp_path: Path):
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = "Both fills"
+            pattern = PatternFill(start_color="FF0000", fill_type="solid")
+            gradient = GradientFill(stop=["00FF00", "0000FF"])
+            # Both specified - gradient should win
+            ctx.apply_style("Sheet", "A1", fill=pattern, gradient_fill=gradient)
+            ctx.workbook.save(path)
+
+        with ExcelContext(path) as ctx:
+            cell = ctx.active["A1"]
+            # Should be gradient, not pattern
+            assert cell.fill.type == "linear"
+            assert len(cell.fill.stop) == 2
 
     def test_apply_number_format(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"

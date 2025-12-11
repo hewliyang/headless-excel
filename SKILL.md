@@ -71,7 +71,7 @@ Unless otherwise stated by the user or existing template
 
 ## Overview
 
-Use `headless-excel` for all Excel operations. It provides automatic formula recalculation and error detection via LibreOffice.
+Use `headless-excel` for all Excel operations. It provides automatic formula recalculation and error detection via `libreoffice-calc` and is essentially a wrapper around `openpyxl` plus some utility methods to make life easier.
 
 ## CRITICAL: Use Formulas, Not Hardcoded Values
 
@@ -101,9 +101,15 @@ ws['C5'] = '=(C4-C2)/C2'
 
 ## Basic Usage
 
+CRITICAL:
+
+- Keep your heredoc's under 100 LoC to avoid compounding errors you cannot recover from
+- Always use `auto_sync`, or if not the remember to call `ctx.sync()` as frequently as possible
+
 ### Creating new Excel files
 
-```python
+```bash
+uv run python <<'EOF'
 from headless_excel import run
 from openpyxl.styles import Font, PatternFill, Alignment
 
@@ -127,11 +133,13 @@ with run("output.xlsx", create=True) as ctx:
     ws.column_dimensions['A'].width = 20
 
     # Auto-syncs on exit (saves, recalculates, checks for errors)
+EOF
 ```
 
 ### Editing existing Excel files
 
-```python
+```bash
+uv run python <<'EOF'
 from headless_excel import run
 
 with run("existing.xlsx") as ctx:
@@ -151,11 +159,13 @@ with run("existing.xlsx") as ctx:
     new_sheet['B1'] = 0.15
 
     # Auto-syncs on exit
+EOF
 ```
 
 ### Reading computed values
 
-```python
+```bash
+uv run python <<'EOF'
 from headless_excel import run
 
 with run("model.xlsx") as ctx:
@@ -169,16 +179,18 @@ with run("model.xlsx") as ctx:
     ctx.active['A1'] = '=SUM(B1:B10)'
     ctx.sync()
     result = ctx.active['A1'].value
+EOF
 ```
 
 ## Error Handling
 
 `headless-excel` automatically detects formula errors:
 
-```python
+```bash
+# Automatic error checking with auto_sync
+uv run python <<'EOF'
 from headless_excel import run, FormulaError
 
-# Automatic error checking with auto_sync
 try:
     with run("model.xlsx", create=True) as ctx:
         ctx.active['A1'] = '=INVALID_REF'
@@ -186,8 +198,12 @@ try:
 except FormulaError as e:
     print(f"Formula errors found: {e.errors}")
     # {'#NAME?': ['Sheet1!A1']}
+EOF
 
 # Manual error checking with detailed context
+uv run python <<'EOF'
+from headless_excel import run
+
 with run("model.xlsx", auto_sync=False) as ctx:
     ws = ctx.active
     ws['A1'] = '=B1/C1'  # Potential #DIV/0!
@@ -200,18 +216,24 @@ with run("model.xlsx", auto_sync=False) as ctx:
         # Fix errors...
         ws['C1'] = 1
         result = ctx.sync()
+EOF
 
 # Raise on errors
+uv run python <<'EOF'
+from headless_excel import run
+
 with run("model.xlsx", raise_on_errors=True) as ctx:
     ctx.active['A1'] = '=InvalidFormula'
     # Raises FormulaError on exit
+EOF
 ```
 
 ## Data Analysis with pandas
 
 For bulk data operations and analysis, use pandas:
 
-```python
+```bash
+uv run python <<'EOF'
 import pandas as pd
 
 # Read Excel
@@ -225,17 +247,20 @@ df.describe()
 
 # Export to Excel for further formula work
 df.to_excel('output.xlsx', index=False)
+EOF
 ```
 
 Then use `headless-excel` to add formulas:
 
-```python
+```bash
+uv run python <<'EOF'
 from headless_excel import run
 
 with run("output.xlsx") as ctx:
     ws = ctx.active
     last_row = len(df) + 2  # +1 for header, +1 for next row
     ws[f'A{last_row}'] = '=SUM(A2:A{last_row-1})'
+EOF
 ```
 
 ## Best Practices
