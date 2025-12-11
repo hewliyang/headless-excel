@@ -50,3 +50,8 @@ ignore = ["E501"]              # line length in XML macro strings
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v"
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.1.0",
+]

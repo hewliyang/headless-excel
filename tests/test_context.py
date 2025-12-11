@@ -411,6 +411,46 @@ class TestSyncResultWithDetails:
         assert result.error_details == []
 
 
+class TestProxyValueUpdate:
+    """Tests that worksheet proxies update correctly after sync."""
+
+    def test_proxy_shows_calculated_value_after_sync(self, tmp_path: Path):
+        """Verify that worksheet proxy returns calculated values after sync."""
+        path = tmp_path / "test.xlsx"
+        with run(path, create=True, auto_sync=False) as ctx:
+            ws = ctx.create_sheet("Sheet1", 0)
+            ws = ctx.active
+
+            ws["A1"] = 100
+            ws["A2"] = 200
+            ws["A3"] = "=SUM(A1:A2)"
+
+            # Before sync, should see formula
+            assert ws["A3"].value == "=SUM(A1:A2)"
+
+            ctx.sync()
+
+            # After sync, same proxy should show calculated value
+            assert ws["A3"].value == 300
+            assert ctx.read_value("Sheet1", "A3") == 300
+
+    def test_proxy_identity_maintained_after_sync(self, tmp_path: Path):
+        """Verify that worksheet proxy object identity is maintained after sync."""
+        path = tmp_path / "test.xlsx"
+        with run(path, create=True, auto_sync=False) as ctx:
+            ws_before = ctx.active
+            ws_before["A1"] = "=10+20"
+
+            ctx.sync()
+
+            ws_after = ctx.active
+
+            # Should be same object (cached)
+            assert ws_before is ws_after
+            # And should show calculated value
+            assert ws_after["A1"].value == 30
+
+
 class TestBuildErrorDetails:
     def test_build_error_details_requires_sync(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"

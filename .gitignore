@@ -84,3 +84,9 @@ dmypy.json
 
 # profiling
 *.prof
+
+# test notebooks
+dev.ipynb
+
+# test excels unless whitelisted
+*.xlsx
