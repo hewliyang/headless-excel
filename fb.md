@@ -1,5 +1,3 @@
-Issues I Hit 🤔
-
 ### 6. Helper for financial modeling patterns
 
 ```python
