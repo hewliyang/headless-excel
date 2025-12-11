@@ -480,7 +480,7 @@ def run(
     ctx = ExcelContext(path, create=create, recalc_timeout=recalc_timeout)
     try:
         yield ctx
-        if auto_sync and ctx._dirty:
+        if auto_sync:
             ctx.sync(raise_on_errors=raise_on_errors)
     finally:
         ctx.close()

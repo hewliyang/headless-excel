@@ -88,6 +88,56 @@ class TestRun:
             ctx.workbook.save(path)
             # No auto sync, so values not available
 
+    def test_run_raise_on_errors_with_manual_sync(self, tmp_path: Path):
+        """Test that raise_on_errors in run() works even after manual sync.
+        
+        This test catches a bug where calling ctx.sync() without raise_on_errors
+        would prevent the context manager from raising on exit, even when
+        run() was called with raise_on_errors=True.
+        """
+        path = tmp_path / "test.xlsx"
+        
+        # Should raise on exit even though we manually synced without raise_on_errors
+        with pytest.raises(FormulaError):
+            with run(path, create=True, raise_on_errors=True) as ctx:
+                ws = ctx.active
+                ws["A1"] = 100
+                # Reference a non-existent sheet - creates #NAME? error
+                ws["A2"] = "=A1+Sheet2!A1"
+                
+                # Manual sync without raise_on_errors - should not raise here
+                result = ctx.sync(raise_on_errors=False)
+                assert not result.success
+                assert result.total_errors == 1
+                
+                # But should raise on context exit due to run(raise_on_errors=True)
+
+    def test_run_raise_on_errors_without_manual_sync(self, tmp_path: Path):
+        """Test that raise_on_errors in run() works with auto_sync."""
+        path = tmp_path / "test.xlsx"
+        
+        with pytest.raises(FormulaError):
+            with run(path, create=True, raise_on_errors=True) as ctx:
+                ws = ctx.active
+                ws["A1"] = 100
+                # Reference a non-existent sheet - creates #NAME? error
+                ws["A2"] = "=A1+Sheet2!A1"
+                # No manual sync - should raise on auto_sync at exit
+
+    def test_run_raise_on_errors_false(self, tmp_path: Path):
+        """Test that raise_on_errors=False does not raise."""
+        path = tmp_path / "test.xlsx"
+        
+        # Should not raise
+        with run(path, create=True, raise_on_errors=False) as ctx:
+            ws = ctx.active
+            ws["A1"] = 100
+            # Reference a non-existent sheet - creates #NAME? error
+            ws["A2"] = "=A1+Sheet2!A1"
+        
+        # Verify file was created and has the error
+        assert path.exists()
+
 
 class TestSyncResult:
     def test_sync_result_success(self, tmp_path: Path):

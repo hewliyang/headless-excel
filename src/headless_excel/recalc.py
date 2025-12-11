@@ -57,7 +57,7 @@ def setup_libreoffice_macro():
     macro_file = os.path.join(macro_dir, "Module1.xba")
 
     if os.path.exists(macro_file):
-        with open(macro_file, "r") as f:
+        with open(macro_file) as f:
             if "RecalculateAndSave" in f.read():
                 return True
 
