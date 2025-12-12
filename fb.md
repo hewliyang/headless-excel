@@ -7,6 +7,7 @@
 ```
 
 > probs has to be some sort of extension/plugin system
+> common formatting helpers. `FORMAT.currency`, `FORMAT.etc`
 
 ### 7. Inspection tools
 
@@ -15,3 +16,5 @@
 ```
 
 > this seems useful - need to figure out how to build the deps graph. in excel - can be circular
+
+- [ ] Improve default **repr** for FormulaError, show more details about the error

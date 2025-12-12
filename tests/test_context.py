@@ -90,13 +90,13 @@ class TestRun:
 
     def test_run_raise_on_errors_with_manual_sync(self, tmp_path: Path):
         """Test that raise_on_errors in run() works even after manual sync.
-        
+
         This test catches a bug where calling ctx.sync() without raise_on_errors
         would prevent the context manager from raising on exit, even when
         run() was called with raise_on_errors=True.
         """
         path = tmp_path / "test.xlsx"
-        
+
         # Should raise on exit even though we manually synced without raise_on_errors
         with pytest.raises(FormulaError):
             with run(path, create=True, raise_on_errors=True) as ctx:
@@ -104,18 +104,18 @@ class TestRun:
                 ws["A1"] = 100
                 # Reference a non-existent sheet - creates #NAME? error
                 ws["A2"] = "=A1+Sheet2!A1"
-                
+
                 # Manual sync without raise_on_errors - should not raise here
                 result = ctx.sync(raise_on_errors=False)
                 assert not result.success
                 assert result.total_errors == 1
-                
+
                 # But should raise on context exit due to run(raise_on_errors=True)
 
     def test_run_raise_on_errors_without_manual_sync(self, tmp_path: Path):
         """Test that raise_on_errors in run() works with auto_sync."""
         path = tmp_path / "test.xlsx"
-        
+
         with pytest.raises(FormulaError):
             with run(path, create=True, raise_on_errors=True) as ctx:
                 ws = ctx.active
@@ -127,14 +127,14 @@ class TestRun:
     def test_run_raise_on_errors_false(self, tmp_path: Path):
         """Test that raise_on_errors=False does not raise."""
         path = tmp_path / "test.xlsx"
-        
+
         # Should not raise
         with run(path, create=True, raise_on_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 100
             # Reference a non-existent sheet - creates #NAME? error
             ws["A2"] = "=A1+Sheet2!A1"
-        
+
         # Verify file was created and has the error
         assert path.exists()
 
@@ -593,3 +593,62 @@ class TestBuildErrorDetails:
             assert details[0].formula == "=A1/B1"
             assert "Sheet!A1" in details[0].neighbors
             assert "Sheet!B1" in details[0].neighbors
+
+    def test_auto_remove_default_sheet(self, tmp_path: Path):
+        """Verify that the default 'Sheet' is auto-removed when creating first custom sheet."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            # Initially should have the default "Sheet"
+            assert len(ctx.workbook.sheetnames) == 1
+            assert "Sheet" in ctx.workbook.sheetnames
+
+            # Create first custom sheet - should auto-remove default "Sheet"
+            ctx.create_sheet("Data")
+
+            # Should now have only "Data", not "Sheet"
+            assert len(ctx.workbook.sheetnames) == 1
+            assert "Data" in ctx.workbook.sheetnames
+            assert "Sheet" not in ctx.workbook.sheetnames
+
+            # Creating another sheet should not remove anything
+            ctx.create_sheet("Summary")
+            assert len(ctx.workbook.sheetnames) == 2
+            assert "Data" in ctx.workbook.sheetnames
+            assert "Summary" in ctx.workbook.sheetnames
+
+    def test_keep_default_sheet_if_has_data(self, tmp_path: Path):
+        """Verify that default sheet is kept if it contains data."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            # Add data to default sheet
+            ctx.active["A1"] = "Important data"
+
+            # Create a custom sheet - should NOT remove default sheet
+            ctx.create_sheet("Data")
+
+            # Should have both sheets
+            assert len(ctx.workbook.sheetnames) == 2
+            assert "Sheet" in ctx.workbook.sheetnames
+            assert "Data" in ctx.workbook.sheetnames
+            assert ctx.sheet("Sheet")["A1"].value == "Important data"
+
+    def test_no_auto_remove_for_loaded_workbooks(self, tmp_path: Path):
+        """Verify that auto-removal only happens for newly created workbooks."""
+        path = tmp_path / "test.xlsx"
+
+        # Create a workbook with default "Sheet"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.workbook.save(path)
+
+        # Load the existing workbook and create a sheet
+        with ExcelContext(path) as ctx:
+            assert "Sheet" in ctx.workbook.sheetnames
+
+            ctx.create_sheet("Data")
+
+            # Should keep both sheets (no auto-removal for loaded workbooks)
+            assert len(ctx.workbook.sheetnames) == 2
+            assert "Sheet" in ctx.workbook.sheetnames
+            assert "Data" in ctx.workbook.sheetnames

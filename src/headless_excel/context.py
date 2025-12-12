@@ -106,6 +106,8 @@ class ExcelContext:
         self._values_workbook: Workbook | None = None
         self._proxy: WorkbookProxy | None = None
         self._dirty = False
+        self._is_new_workbook = create
+        self._first_sheet_created = False
 
         if create:
             self._workbook = Workbook()
@@ -154,8 +156,42 @@ class ExcelContext:
         return self.workbook[name]
 
     def create_sheet(self, name: str, index: int | None = None) -> WorksheetProxy:
-        """Create a new worksheet."""
+        """Create a new worksheet.
+
+        Note: When creating a new workbook, the default empty "Sheet" is
+        automatically removed when you create your first custom sheet.
+        """
         self._dirty = True
+
+        # Auto-remove the default "Sheet" on first create_sheet() call
+        # for new workbooks (created with create=True)
+        if (
+            self._is_new_workbook
+            and not self._first_sheet_created
+            and self._workbook is not None
+        ):
+            self._first_sheet_created = True
+
+            # Check if we have the default single empty sheet
+            if len(self._workbook.worksheets) == 1:
+                default_sheet = self._workbook.worksheets[0]
+
+                # Check if it's the default "Sheet" and is empty
+                if default_sheet.title == "Sheet":
+                    # Check if sheet is empty (no data in any cells)
+                    is_empty = True
+                    for row in default_sheet.iter_rows():
+                        for cell in row:
+                            if cell.value is not None:
+                                is_empty = False
+                                break
+                        if not is_empty:
+                            break
+
+                    # Remove the default sheet if empty
+                    if is_empty:
+                        self._workbook.remove(default_sheet)
+
         return self.workbook.create_sheet(name, index)
 
     def sync(self, raise_on_errors: bool = False) -> SyncResult:
