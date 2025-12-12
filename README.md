@@ -102,6 +102,40 @@ for detail in result.error_details:
     detail.neighbors  # {'Sheet1!B1': 100, 'Sheet1!C1': 0}
 ```
 
+### Number Formatting & Colors
+
+Use built-in constants instead of remembering format strings:
+
+```python
+from headless_excel import run, NumberFormats, Colors
+from openpyxl.styles import Font
+
+with run("model.xlsx") as ctx:
+    ws = ctx.active
+
+    # Apply accounting format (aligns $, negatives in parentheses)
+    ws['A1'] = 1234.56
+    ws['A1'].number_format = NumberFormats.ACCOUNTING
+
+    # Percentage with 2 decimals
+    ws['B1'] = 0.1575
+    ws['B1'].number_format = NumberFormats.PERCENTAGE_2DP
+
+    # Apply to range
+    ctx.apply_style("Sheet", "C1:C10", number_format=NumberFormats.NUMBER)
+
+    # Color conventions for financial models
+    ws['D1'] = 100  # Hardcoded input
+    ws['D1'].font = Font(color=Colors.HARDCODE)  # Blue
+
+    ws['E1'] = "=D1*2"  # Formula
+    ws['E1'].font = Font(color=Colors.FORMULA)  # Black
+```
+
+**Available formats:** `ACCOUNTING`, `ACCOUNTING_0DP`, `PERCENTAGE`, `PERCENTAGE_1DP`, `PERCENTAGE_2DP`, `NUMBER`, `NUMBER_0DP`, `DATE`, `DATE_LONG`
+
+**Available colors:** `HARDCODE` (blue), `FORMULA` (black), `EXTERNAL_LINK` (green)
+
 ### Exceptions
 
 - `ExcelError` - Base exception

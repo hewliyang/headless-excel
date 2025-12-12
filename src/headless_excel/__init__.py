@@ -2,14 +2,17 @@
 
 from headless_excel.context import ErrorDetail, ExcelContext, SyncResult, run
 from headless_excel.errors import ExcelError, FormulaError, RecalcError, SyncError
+from headless_excel.formats import Colors, NumberFormats
 from headless_excel.proxy import CellProxy, WorkbookProxy, WorksheetProxy
 
 __all__ = [
     "CellProxy",
+    "Colors",
     "ErrorDetail",
     "ExcelContext",
     "ExcelError",
     "FormulaError",
+    "NumberFormats",
     "RecalcError",
     "SyncError",
     "SyncResult",

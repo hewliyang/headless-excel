@@ -73,6 +73,37 @@ Unless otherwise stated by the user or existing template
 
 Use `headless-excel` for all Excel operations. It provides automatic formula recalculation and error detection via `libreoffice-calc` and is essentially a wrapper around `openpyxl` plus some utility methods to make life easier.
 
+### Number Formatting & Colors
+
+Use built-in constants instead of remembering format strings:
+
+```bash
+uv run python<<'EOF'
+from headless_excel import run, NumberFormats, Colors
+from openpyxl.styles import Font
+
+with run("model.xlsx") as ctx:
+    ws = ctx.active
+    ws['A1'] = 1234.56
+    ws['A1'].number_format = NumberFormats.ACCOUNTING  # $1,234.56
+
+    ws['B1'] = 0.15
+    ws['B1'].number_format = NumberFormats.PERCENTAGE_2DP  # 15.00%
+
+    # Apply to ranges
+    ctx.apply_style("Sheet", "C1:C10", number_format=NumberFormats.NUMBER)
+
+    # Financial model colors
+    ws['D1'].font = Font(color=Colors.HARDCODE)  # Blue for inputs
+    ws['E1'].font = Font(color=Colors.FORMULA)  # Black for formulas
+    ws['F1'].font = Font(color=Colors.EXTERNAL_LINK)  # Green for links
+EOF
+```
+
+**Available formats:** `ACCOUNTING`, `ACCOUNTING_0DP`, `PERCENTAGE`, `PERCENTAGE_1DP`, `PERCENTAGE_2DP`, `NUMBER`, `NUMBER_0DP`, `DATE`, `DATE_LONG`
+
+**Available colors:** `HARDCODE` (blue), `FORMULA` (black), `EXTERNAL_LINK` (green)
+
 ## CRITICAL: Use Formulas, Not Hardcoded Values
 
 **Always use Excel formulas instead of calculating values in Python and hardcoding them.** This ensures the spreadsheet remains dynamic and updateable.
