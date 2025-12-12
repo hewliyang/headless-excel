@@ -182,6 +182,40 @@ with run("model.xlsx") as ctx:
 EOF
 ```
 
+### Inspecting formulas
+
+Use `get_formulas()` to audit and debug formula logic without calculating values:
+
+```bash
+uv run python <<'EOF'
+from headless_excel import run
+
+with run("model.xlsx") as ctx:
+    # Get all formulas in a specific sheet
+    formulas = ctx.get_formulas("Revenue")
+    # Returns: {'A3': '=A1+A2', 'B3': '=B1*B2', 'C3': '=SUM(A3:B3)'}
+
+    # Get all formulas in entire workbook
+    all_formulas = ctx.get_formulas()
+    # Returns: {'Revenue!A3': '=A1+A2', 'Summary!B5': '=Revenue!C3*1.15', ...}
+
+    # Common use cases:
+    # 1. Audit formula logic before sync
+    for cell, formula in formulas.items():
+        if 'HARDCODED_VALUE' in formula:
+            print(f"Warning: {cell} has hardcoded value")
+
+    # 2. Find cells referencing a specific cell
+    for cell, formula in formulas.items():
+        if 'B1' in formula:
+            print(f"{cell} references B1: {formula}")
+
+    # 3. Validate formula consistency
+    if formulas.get('C3') != formulas.get('C4'):
+        print("Warning: Inconsistent formulas in C3 and C4")
+EOF
+```
+
 ## Error Handling
 
 `headless-excel` automatically detects formula errors:
@@ -278,7 +312,7 @@ EOF
 - Use `raise_on_errors=True` to enforce zero-error requirement
 - Use `ctx.get_formulas("Sheet1")` to inspect all formulas in a sheet
 - Use `ctx.apply_style("Sheet1", "A1:G5", ...)` for batch styling
-- Cell indices are 1-based (A1, not 0,0)
+- Use A1 notation for cell references (e.g., `ws['A1']`, `ws['B5']`), not numeric indices
 - Build worksheets incrementally: prefer heredocs for multi-step cell setup, keep each heredoc under 100 lines, and call `ctx.sync()` after each block to catch errors before they compound
 
 ### Common Pitfalls to Avoid
