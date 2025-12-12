@@ -32,6 +32,9 @@ dependencies = [
 Homepage = "https://github.com/brightriver/headless-excel"
 Repository = "https://github.com/brightriver/headless-excel"
 
+[project.scripts]
+convert-heredoc = "scripts.convert_heredoc:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
