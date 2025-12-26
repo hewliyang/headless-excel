@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import Any
 
 from openpyxl.cell.cell import Cell
@@ -17,6 +18,9 @@ from openpyxl.styles import (
 from openpyxl.utils import column_index_from_string
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
+
+# Type alias for write callback
+OnWriteCallback = Callable[[], None] | None
 
 # Pattern for parsing range references like "A1:B2" or "A1"
 RANGE_PATTERN = re.compile(r"^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$", re.IGNORECASE)
@@ -67,15 +71,22 @@ class RangeProxy:
         r.apply_style(font=Font(bold=True))
     """
 
-    def __init__(self, ws_proxy: WorksheetProxy, range_ref: str) -> None:
+    def __init__(
+        self,
+        ws_proxy: WorksheetProxy,
+        range_ref: str,
+        on_write: OnWriteCallback = None,
+    ) -> None:
         """Initialize range proxy.
 
         Args:
             ws_proxy: Parent WorksheetProxy
             range_ref: Range reference like "A1:B2" or "A1"
+            on_write: Callback to invoke when write operations occur
         """
         self._ws = ws_proxy
         self._range_ref = range_ref
+        self._on_write = on_write
         self._min_row, self._min_col, self._max_row, self._max_col = _parse_range(
             range_ref
         )
@@ -134,6 +145,10 @@ class RangeProxy:
                     f"Column count mismatch in row {i}: got {len(row)}, expected {self.num_cols}"
                 )
 
+        # Mark dirty before writing
+        if self._on_write:
+            self._on_write()
+
         # Write values
         for row_offset, row_data in enumerate(data):
             for col_offset, value in enumerate(row_data):
@@ -182,6 +197,10 @@ class RangeProxy:
             protection: Protection settings
             number_format: Number format string
         """
+        # Mark dirty before applying styles
+        if self._on_write:
+            self._on_write()
+
         for row_idx in range(self._min_row, self._max_row + 1):
             for col_idx in range(self._min_col, self._max_col + 1):
                 cell = self._ws._formula_ws.cell(row_idx, col_idx)
@@ -211,9 +230,15 @@ class CellProxy:
     but returns values from the data-only cell when available.
     """
 
-    def __init__(self, formula_cell: Cell, values_cell: Cell | None = None) -> None:
+    def __init__(
+        self,
+        formula_cell: Cell,
+        values_cell: Cell | None = None,
+        on_write: OnWriteCallback = None,
+    ) -> None:
         self._formula_cell = formula_cell
         self._values_cell = values_cell
+        self._on_write = on_write
 
     def _update_values_cell(self, values_cell: Cell | None) -> None:
         """Update the values cell reference (called after sync)."""
@@ -229,6 +254,8 @@ class CellProxy:
     @value.setter
     def value(self, val: Any) -> None:
         """Set value on formula cell."""
+        if self._on_write:
+            self._on_write()
         self._formula_cell.value = val
 
     # Forward all other attributes to formula cell
@@ -236,9 +263,13 @@ class CellProxy:
         return getattr(self._formula_cell, name)
 
     def __setattr__(self, name: str, value: Any) -> None:
-        if name in ("_formula_cell", "_values_cell"):
+        if name in ("_formula_cell", "_values_cell", "_on_write"):
             object.__setattr__(self, name, value)
         else:
+            # Mark dirty for any attribute write (font, number_format, etc.)
+            on_write = object.__getattribute__(self, "_on_write")
+            if on_write:
+                on_write()
             setattr(self._formula_cell, name, value)
 
     def __repr__(self) -> str:
@@ -253,10 +284,14 @@ class WorksheetProxy:
     """
 
     def __init__(
-        self, formula_ws: Worksheet, values_ws: Worksheet | None = None
+        self,
+        formula_ws: Worksheet,
+        values_ws: Worksheet | None = None,
+        on_write: OnWriteCallback = None,
     ) -> None:
         self._formula_ws = formula_ws
         self._values_ws = values_ws
+        self._on_write = on_write
         self._cell_cache: dict[str, CellProxy] = {}  # Cache cell proxies
 
     def _update_values_ws(self, values_ws: Worksheet | None) -> None:
@@ -280,7 +315,7 @@ class WorksheetProxy:
             values_cell = None
             if self._values_ws is not None:
                 values_cell = self._values_ws[key]
-            proxy = CellProxy(formula_item, values_cell)
+            proxy = CellProxy(formula_item, values_cell, self._on_write)
             self._cell_cache[key] = proxy
             return proxy
 
@@ -290,29 +325,34 @@ class WorksheetProxy:
                 values_item = self._values_ws[key]
                 return tuple(
                     tuple(
-                        CellProxy(f_cell, v_cell)
+                        CellProxy(f_cell, v_cell, self._on_write)
                         for f_cell, v_cell in zip(f_row, v_row)
                     )
                     for f_row, v_row in zip(formula_item, values_item)
                 )
             else:
                 return tuple(
-                    tuple(CellProxy(cell, None) for cell in row) for row in formula_item
+                    tuple(CellProxy(cell, None, self._on_write) for cell in row)
+                    for row in formula_item
                 )
 
         return formula_item
 
     def __setitem__(self, key: str, value: Any) -> None:
         """Set cell value."""
+        if self._on_write:
+            self._on_write()
         self._formula_ws[key] = value
 
     def cell(self, row: int, column: int, value: Any = None) -> CellProxy:
         """Access cell by row/column index."""
+        if value is not None and self._on_write:
+            self._on_write()
         formula_cell = self._formula_ws.cell(row, column, value)
         values_cell = None
         if self._values_ws is not None:
             values_cell = self._values_ws.cell(row, column)
-        return CellProxy(formula_cell, values_cell)
+        return CellProxy(formula_cell, values_cell, self._on_write)
 
     def iter_rows(
         self, min_row=None, max_row=None, min_col=None, max_col=None, values_only=False
@@ -337,11 +377,12 @@ class WorksheetProxy:
             )
             for f_row, v_row in zip(formula_rows, values_rows):
                 yield tuple(
-                    CellProxy(f_cell, v_cell) for f_cell, v_cell in zip(f_row, v_row)
+                    CellProxy(f_cell, v_cell, self._on_write)
+                    for f_cell, v_cell in zip(f_row, v_row)
                 )
         else:
             for f_row in formula_rows:
-                yield tuple(CellProxy(cell, None) for cell in f_row)
+                yield tuple(CellProxy(cell, None, self._on_write) for cell in f_row)
 
     def iter_cols(
         self, min_row=None, max_row=None, min_col=None, max_col=None, values_only=False
@@ -365,11 +406,12 @@ class WorksheetProxy:
             )
             for f_col, v_col in zip(formula_cols, values_cols):
                 yield tuple(
-                    CellProxy(f_cell, v_cell) for f_cell, v_cell in zip(f_col, v_col)
+                    CellProxy(f_cell, v_cell, self._on_write)
+                    for f_cell, v_cell in zip(f_col, v_col)
                 )
         else:
             for f_col in formula_cols:
-                yield tuple(CellProxy(cell, None) for cell in f_col)
+                yield tuple(CellProxy(cell, None, self._on_write) for cell in f_col)
 
     def range(self, ref: str) -> RangeProxy:
         """Get a range for bulk read/write operations.
@@ -385,7 +427,7 @@ class WorksheetProxy:
             r.values = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
             r.apply_style(font=Font(bold=True))
         """
-        return RangeProxy(self, ref)
+        return RangeProxy(self, ref, self._on_write)
 
     @property
     def formulas(self) -> dict[str, str]:
@@ -411,9 +453,13 @@ class WorksheetProxy:
         return getattr(self._formula_ws, name)
 
     def __setattr__(self, name: str, value: Any) -> None:
-        if name in ("_formula_ws", "_values_ws"):
+        if name in ("_formula_ws", "_values_ws", "_on_write", "_cell_cache"):
             object.__setattr__(self, name, value)
         else:
+            # Mark dirty for worksheet attribute writes (like title)
+            on_write = object.__getattribute__(self, "_on_write")
+            if on_write:
+                on_write()
             setattr(self._formula_ws, name, value)
 
     def __repr__(self) -> str:
@@ -426,9 +472,15 @@ class WorkbookProxy:
     Wraps worksheet access to return WorksheetProxy instances.
     """
 
-    def __init__(self, formula_wb: Workbook, values_wb: Workbook | None = None) -> None:
+    def __init__(
+        self,
+        formula_wb: Workbook,
+        values_wb: Workbook | None = None,
+        on_write: OnWriteCallback = None,
+    ) -> None:
         self._formula_wb = formula_wb
         self._values_wb = values_wb
+        self._on_write = on_write
         self._sheet_cache: dict[str, WorksheetProxy] = {}  # Cache sheet proxies
 
     def _update_values_wb(self, values_wb: Workbook | None) -> None:
@@ -451,7 +503,7 @@ class WorkbookProxy:
         values_ws = None
         if self._values_wb is not None:
             values_ws = self._values_wb[key]
-        proxy = WorksheetProxy(formula_ws, values_ws)
+        proxy = WorksheetProxy(formula_ws, values_ws, self._on_write)
         self._sheet_cache[key] = proxy
         return proxy
 
@@ -470,13 +522,15 @@ class WorkbookProxy:
         values_ws = None
         if self._values_wb is not None:
             values_ws = self._values_wb.active
-        proxy = WorksheetProxy(formula_ws, values_ws)
+        proxy = WorksheetProxy(formula_ws, values_ws, self._on_write)
         self._sheet_cache[sheet_name] = proxy
         return proxy
 
     @active.setter
     def active(self, sheet: WorksheetProxy | str) -> None:
         """Set active worksheet by proxy or name."""
+        if self._on_write:
+            self._on_write()
         if isinstance(sheet, str):
             self._formula_wb.active = self._formula_wb[sheet]
             if self._values_wb is not None:
@@ -492,9 +546,11 @@ class WorkbookProxy:
         self, title: str | None = None, index: int | None = None
     ) -> WorksheetProxy:
         """Create a new worksheet."""
+        if self._on_write:
+            self._on_write()
         formula_ws = self._formula_wb.create_sheet(title, index)
         # New sheets don't have values yet, but cache so sync() updates them
-        proxy = WorksheetProxy(formula_ws, None)
+        proxy = WorksheetProxy(formula_ws, None, self._on_write)
         if formula_ws.title:
             self._sheet_cache[formula_ws.title] = proxy
         return proxy
@@ -504,24 +560,31 @@ class WorkbookProxy:
         """Get list of all worksheets."""
         if self._values_wb is not None:
             return [
-                WorksheetProxy(f_ws, v_ws)
+                WorksheetProxy(f_ws, v_ws, self._on_write)
                 for f_ws, v_ws in zip(
                     self._formula_wb.worksheets, self._values_wb.worksheets
                 )
             ]
-        return [WorksheetProxy(ws, None) for ws in self._formula_wb.worksheets]
+        return [
+            WorksheetProxy(ws, None, self._on_write)
+            for ws in self._formula_wb.worksheets
+        ]
 
     # Forward all other attributes to formula workbook
     def __getattr__(self, name: str) -> Any:
         return getattr(self._formula_wb, name)
 
     def __setattr__(self, name: str, value: Any) -> None:
-        if name in ("_formula_wb", "_values_wb", "_sheet_cache"):
+        if name in ("_formula_wb", "_values_wb", "_sheet_cache", "_on_write"):
             object.__setattr__(self, name, value)
         elif name == "active":
             # Use our custom setter for active
             type(self).active.fset(self, value)
         else:
+            # Mark dirty for any workbook attribute write
+            on_write = object.__getattribute__(self, "_on_write")
+            if on_write:
+                on_write()
             setattr(self._formula_wb, name, value)
 
     def __repr__(self) -> str:

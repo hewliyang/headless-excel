@@ -47,6 +47,6 @@ ctx.delete_sheet("{{ sheet name }}")
 2. sheet creation order not documented
 3. emphasize we are just wrapping openpyxl and ws = ctx.active; ws is just a `openpyxl.Worksheet`
 
-# Optimization [ ]
+# Optimization [X]
 
 - If no new formulae were added i.e. the batch of operations was read-only then there is no need to recalc even when auto_sync=True

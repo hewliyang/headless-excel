@@ -104,6 +104,7 @@ class ExcelContext:
         self._dirty = False
         self._is_new_workbook = create
         self._first_sheet_created = False
+        self._last_sync_result: SyncResult | None = None
 
         if create:
             self._workbook = Workbook()
@@ -113,14 +114,19 @@ class ExcelContext:
         else:
             raise FileNotFoundError(f"File not found: {path}")
 
-        self._proxy = WorkbookProxy(self._workbook, self._values_workbook)
+        self._proxy = WorkbookProxy(
+            self._workbook, self._values_workbook, on_write=self._mark_dirty
+        )
+
+    def _mark_dirty(self) -> None:
+        """Mark the context as dirty (called by proxies on write operations)."""
+        self._dirty = True
 
     @property
     def workbook(self) -> WorkbookProxy:
         """The workbook proxy (returns materialized values after sync)."""
         if self._proxy is None:
             raise RuntimeError("Context not initialized")
-        self._dirty = True
         return self._proxy
 
     @property
@@ -276,7 +282,9 @@ class ExcelContext:
             self._proxy._formula_wb = self._workbook
             self._proxy._update_values_wb(self._values_workbook)
         else:
-            self._proxy = WorkbookProxy(self._workbook, self._values_workbook)
+            self._proxy = WorkbookProxy(
+                self._workbook, self._values_workbook, on_write=self._mark_dirty
+            )
 
         self._dirty = False
 
@@ -293,6 +301,9 @@ class ExcelContext:
             errors=errors,
             error_details=error_details,
         )
+
+        # Store result for checking on context exit
+        self._last_sync_result = sync_result
 
         if raise_on_errors:
             sync_result.raise_on_errors()
@@ -408,7 +419,9 @@ def _run_context(
     ctx = ExcelContext(path, create=create_mode, recalc_timeout=recalc_timeout)
     try:
         yield ctx
-        if auto_sync:
+
+        # Only sync if there were actual write operations
+        if auto_sync and ctx._dirty:
             result = ctx.sync(raise_on_errors=False)
             if raise_on_errors and not result.success:
                 err = FormulaError(
@@ -418,6 +431,14 @@ def _run_context(
                 )
                 # hack to suppress traceback to reduce context pollution
                 raise SystemExit(str(err))
+        elif raise_on_errors and ctx._last_sync_result and not ctx._last_sync_result.success:
+            # No new writes, but a previous manual sync had errors
+            err = FormulaError(
+                errors=ctx._last_sync_result.errors,
+                total=ctx._last_sync_result.total_errors,
+                error_details=ctx._last_sync_result.error_details,
+            )
+            raise SystemExit(str(err))
     finally:
         ctx.close()
 
