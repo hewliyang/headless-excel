@@ -38,23 +38,23 @@ class TestNumberFormats:
         path = tmp_path / "test.xlsx"
         with create(path, auto_sync=False) as ctx:
             ctx.active["A1"] = 1234.56
-            ctx.active["A1"].number_format = NumberFormats.ACCOUNTING
+            ctx.active["A1"].number_format = NumberFormats.ACCOUNTING  # type: ignore[union-attr]
             ctx.workbook.save(path)
 
         with run(path, auto_sync=False) as ctx:
-            assert ctx.active["A1"].number_format == NumberFormats.ACCOUNTING
-            assert ctx.active["A1"].value == 1234.56
+            assert ctx.active["A1"].number_format == NumberFormats.ACCOUNTING  # type: ignore[union-attr]
+            assert ctx.active["A1"].value == 1234.56  # type: ignore[union-attr]
 
     def test_apply_percentage_format(self, tmp_path: Path):
         """NumberFormats.PERCENTAGE should work with cells."""
         path = tmp_path / "test.xlsx"
         with create(path, auto_sync=False) as ctx:
             ctx.active["A1"] = 0.1575
-            ctx.active["A1"].number_format = NumberFormats.PERCENTAGE_2DP
+            ctx.active["A1"].number_format = NumberFormats.PERCENTAGE_2DP  # type: ignore[union-attr]
             ctx.workbook.save(path)
 
         with run(path, auto_sync=False) as ctx:
-            assert ctx.active["A1"].number_format == NumberFormats.PERCENTAGE_2DP
+            assert ctx.active["A1"].number_format == NumberFormats.PERCENTAGE_2DP  # type: ignore[union-attr]
 
     def test_apply_style_with_format(self, tmp_path: Path):
         """NumberFormats should work with range.apply_style()."""
@@ -66,8 +66,8 @@ class TestNumberFormats:
             ctx.workbook.save(path)
 
         with run(path, auto_sync=False) as ctx:
-            assert ctx.active["A1"].number_format == NumberFormats.NUMBER
-            assert ctx.active["A2"].number_format == NumberFormats.NUMBER
+            assert ctx.active["A1"].number_format == NumberFormats.NUMBER  # type: ignore[union-attr]
+            assert ctx.active["A2"].number_format == NumberFormats.NUMBER  # type: ignore[union-attr]
 
 
 class TestColors:
@@ -91,13 +91,13 @@ class TestColors:
         path = tmp_path / "test.xlsx"
         with create(path, auto_sync=False) as ctx:
             ctx.active["A1"] = 100
-            ctx.active["A1"].font = Font(color=Colors.HARDCODE)
+            ctx.active["A1"].font = Font(color=Colors.HARDCODE)  # type: ignore[union-attr]
 
             ctx.active["A2"] = "=A1*2"
-            ctx.active["A2"].font = Font(color=Colors.FORMULA)
+            ctx.active["A2"].font = Font(color=Colors.FORMULA)  # type: ignore[union-attr]
 
             ctx.workbook.save(path)
 
         with run(path, auto_sync=False) as ctx:
-            assert ctx.active["A1"].font.color.rgb == Colors.HARDCODE
-            assert ctx.active["A2"].font.color.rgb == Colors.FORMULA
+            assert ctx.active["A1"].font.color.rgb == Colors.HARDCODE  # type: ignore[union-attr]
+            assert ctx.active["A2"].font.color.rgb == Colors.FORMULA  # type: ignore[union-attr]

@@ -225,11 +225,21 @@ class RangeProxy:
         lines = []
 
         # Header row with column letters
-        header = "|" + "|".join(f" {col_letters[i]:>{col_widths[i]}} " for i in range(len(col_letters))) + "|"
+        header = (
+            "|"
+            + "|".join(
+                f" {col_letters[i]:>{col_widths[i]}} " for i in range(len(col_letters))
+            )
+            + "|"
+        )
         lines.append(header)
 
         # Separator
-        sep = "|" + "|".join("-" * (col_widths[i] + 2) for i in range(len(col_widths))) + "|"
+        sep = (
+            "|"
+            + "|".join("-" * (col_widths[i] + 2) for i in range(len(col_widths)))
+            + "|"
+        )
         lines.append(sep)
 
         # Data rows

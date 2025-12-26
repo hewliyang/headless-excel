@@ -174,19 +174,19 @@ def recalc(filename, timeout=30):
         wb.close()
 
         # Build result summary
-        result = {
-            "status": "success" if total_errors == 0 else "errors_found",
-            "total_errors": total_errors,
-            "error_summary": {},
-        }
-
-        # Add non-empty error categories
+        error_summary: dict[str, dict[str, int | list[str]]] = {}
         for err_type, locations in error_details.items():
             if locations:
-                result["error_summary"][err_type] = {
+                error_summary[err_type] = {
                     "count": len(locations),
                     "locations": locations[:20],  # Show up to 20 locations
                 }
+
+        result: dict[str, str | int | dict[str, dict[str, int | list[str]]]] = {
+            "status": "success" if total_errors == 0 else "errors_found",
+            "total_errors": total_errors,
+            "error_summary": error_summary,
+        }
 
         # Add formula count for context - also check ALL cells
         wb_formulas = load_workbook(filename, data_only=False)

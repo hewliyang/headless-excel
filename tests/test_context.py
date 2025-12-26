@@ -21,6 +21,7 @@ from headless_excel import (
     create,
     run,
 )
+from headless_excel.proxy import CellProxy
 
 
 class TestExcelContext:
@@ -42,7 +43,7 @@ class TestExcelContext:
 
         # Load and verify
         with ExcelContext(path) as ctx:
-            assert ctx.active["A1"].value == "Hello"
+            assert ctx.active["A1"].value == "Hello"  # type: ignore[union-attr]
 
     def test_file_not_found(self, tmp_path: Path):
         path = tmp_path / "nonexistent.xlsx"
@@ -63,7 +64,7 @@ class TestExcelContext:
 
         with ExcelContext(path) as ctx:
             assert "Data" in ctx.workbook.sheetnames
-            assert ctx.sheet("Data")["A1"].value == "Test"
+            assert ctx.sheet("Data")["A1"].value == "Test"  # type: ignore[union-attr]
 
     def test_values_before_sync_raises(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
@@ -81,7 +82,7 @@ class TestRun:
             ctx.workbook.save(path)
 
         with run(path, auto_sync=False) as ctx:
-            assert ctx.active["A1"].value == "Hello"
+            assert ctx.active["A1"].value == "Hello"  # type: ignore[union-attr]
 
     def test_run_file_not_found(self, tmp_path: Path):
         """Test that run() raises FileNotFoundError for missing file."""
@@ -129,7 +130,7 @@ class TestCreate:
             ctx.workbook.save(path)
 
         with run(path) as ctx:
-            assert ctx.active["A1"].value == "Replaced"
+            assert ctx.active["A1"].value == "Replaced"  # type: ignore[union-attr]
 
     def test_create_raise_on_errors_with_manual_sync(self, tmp_path: Path):
         """Test that raise_on_errors in create() works even after manual sync."""
@@ -260,8 +261,8 @@ class TestRangeProxy:
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
-            assert ctx.active["A1"].value == 1
-            assert ctx.active["C2"].value == 6
+            assert ctx.active["A1"].value == 1  # type: ignore[union-attr]
+            assert ctx.active["C2"].value == 6  # type: ignore[union-attr]
 
     def test_range_values_write_row_mismatch(self, tmp_path: Path):
         """Test that row count mismatch raises ValueError."""
@@ -285,7 +286,7 @@ class TestRangeProxy:
         with ExcelContext(path, create=True) as ctx:
             r = ctx.active.range("A1:B2")
             with pytest.raises(ValueError, match="must be a 2D list"):
-                r.values = "not a list"
+                r.values = "not a list"  # type: ignore[assignment]
 
     def test_range_values_write_row_not_list(self, tmp_path: Path):
         """Test that non-list row raises ValueError."""
@@ -293,7 +294,7 @@ class TestRangeProxy:
         with ExcelContext(path, create=True) as ctx:
             r = ctx.active.range("A1:B2")
             with pytest.raises(ValueError, match="Row 0 must be a list"):
-                r.values = ["not", "nested"]
+                r.values = ["not", "nested"]  # type: ignore[assignment]
 
     def test_range_shape(self, tmp_path: Path):
         """Test range shape property."""
@@ -314,7 +315,7 @@ class TestRangeProxy:
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
-            assert ctx.active["C5"].value == 42
+            assert ctx.active["C5"].value == 42  # type: ignore[union-attr]
 
     def test_range_formulas(self, tmp_path: Path):
         """Test reading formulas from a range."""
@@ -343,8 +344,8 @@ class TestRangeProxy:
 
         with ExcelContext(path) as ctx:
             # Values are materialized (10, 20 are numbers)
-            assert ctx.active["A1"].value == 10
-            assert ctx.active["B2"].value == 40
+            assert ctx.active["A1"].value == 10  # type: ignore[union-attr]
+            assert ctx.active["B2"].value == 40  # type: ignore[union-attr]
             # Formulas are preserved and accessible via .formulas
             assert ctx.active.formulas == {"C1": "=A1+B1", "C2": "=A2+B2"}
             # Range formulas returns dict (same format as sheet.formulas)
@@ -380,7 +381,7 @@ class TestRangeApplyStyle:
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
-            cell = ctx.active["A1"]
+            cell: CellProxy = ctx.active["A1"]  # type: ignore[assignment]
             assert cell.font.bold is True
             assert cell.font.color.rgb == "00FF0000"
 
@@ -394,7 +395,7 @@ class TestRangeApplyStyle:
 
         with ExcelContext(path) as ctx:
             for col in ["A", "B", "C"]:
-                assert ctx.active[f"{col}1"].font.italic is True
+                assert ctx.active[f"{col}1"].font.italic is True  # type: ignore[union-attr]
 
     def test_apply_fill(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
@@ -407,7 +408,7 @@ class TestRangeApplyStyle:
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
-            assert ctx.active["A1"].fill.start_color.rgb == "00FFFF00"
+            assert ctx.active["A1"].fill.start_color.rgb == "00FFFF00"  # type: ignore[union-attr]
 
     def test_apply_gradient_fill(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
@@ -418,7 +419,7 @@ class TestRangeApplyStyle:
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
-            cell = ctx.active["A1"]
+            cell: CellProxy = ctx.active["A1"]  # type: ignore[assignment]
             assert cell.fill.type == "linear"
             assert len(cell.fill.stop) == 2
             assert cell.fill.stop[0].color.rgb == "00FF0000"
@@ -435,7 +436,7 @@ class TestRangeApplyStyle:
 
         with ExcelContext(path) as ctx:
             for col in ["A", "B", "C"]:
-                cell = ctx.active[f"{col}1"]
+                cell: CellProxy = ctx.active[f"{col}1"]  # type: ignore[assignment]
                 assert cell.fill.type == "linear"
                 assert cell.fill.degree == 90
                 assert cell.fill.stop[0].color.rgb == "0000FF00"
@@ -451,7 +452,7 @@ class TestRangeApplyStyle:
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
-            cell = ctx.active["A1"]
+            cell: CellProxy = ctx.active["A1"]  # type: ignore[assignment]
             assert cell.fill.type == "linear"
             assert len(cell.fill.stop) == 2
 
@@ -464,8 +465,8 @@ class TestRangeApplyStyle:
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
-            assert ctx.active["A1"].number_format == "#,##0.00;(#,##0.00)"
-            assert ctx.active["A2"].number_format == "#,##0.00;(#,##0.00)"
+            assert ctx.active["A1"].number_format == "#,##0.00;(#,##0.00)"  # type: ignore[union-attr]
+            assert ctx.active["A2"].number_format == "#,##0.00;(#,##0.00)"  # type: ignore[union-attr]
 
     def test_apply_alignment(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
@@ -477,8 +478,8 @@ class TestRangeApplyStyle:
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
-            assert ctx.active["A1"].alignment.horizontal == "center"
-            assert ctx.active["A1"].alignment.vertical == "top"
+            assert ctx.active["A1"].alignment.horizontal == "center"  # type: ignore[union-attr]
+            assert ctx.active["A1"].alignment.vertical == "top"  # type: ignore[union-attr]
 
     def test_apply_border(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
@@ -492,8 +493,8 @@ class TestRangeApplyStyle:
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
-            assert ctx.active["A1"].border.left.style == "thin"
-            assert ctx.active["A1"].border.right.style == "thin"
+            assert ctx.active["A1"].border.left.style == "thin"  # type: ignore[union-attr]
+            assert ctx.active["A1"].border.right.style == "thin"  # type: ignore[union-attr]
 
     def test_apply_protection(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
@@ -505,8 +506,8 @@ class TestRangeApplyStyle:
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
-            assert ctx.active["A1"].protection.locked is True
-            assert ctx.active["A1"].protection.hidden is True
+            assert ctx.active["A1"].protection.locked is True  # type: ignore[union-attr]
+            assert ctx.active["A1"].protection.hidden is True  # type: ignore[union-attr]
 
     def test_apply_multiple_styles(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
@@ -521,7 +522,7 @@ class TestRangeApplyStyle:
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
-            cell = ctx.active["B2"]
+            cell: CellProxy = ctx.active["B2"]  # type: ignore[assignment]
             assert cell.font.bold is True
             assert cell.fill.start_color.rgb == "0000FF00"
             assert cell.number_format == "0.00"
@@ -539,7 +540,7 @@ class TestRangeApplyStyle:
         with ExcelContext(path) as ctx:
             for row in range(1, 4):
                 for col in ["A", "B", "C"]:
-                    assert ctx.active[f"{col}{row}"].font.size == 14
+                    assert ctx.active[f"{col}{row}"].font.size == 14  # type: ignore[union-attr]
 
 
 class TestSheetFormulas:
@@ -686,12 +687,12 @@ class TestProxyValueUpdate:
             ws["A3"] = "=SUM(A1:A2)"
 
             # Before sync, should see formula
-            assert ws["A3"].value == "=SUM(A1:A2)"
+            assert ws["A3"].value == "=SUM(A1:A2)"  # type: ignore[union-attr]
 
             ctx.sync()
 
             # After sync, same proxy should show calculated value
-            assert ws["A3"].value == 300
+            assert ws["A3"].value == 300  # type: ignore[union-attr]
             # Read via range too
             assert ws.range("A3").values == [[300]]
 
@@ -709,7 +710,7 @@ class TestProxyValueUpdate:
             # Should be same object (cached)
             assert ws_before is ws_after
             # And should show calculated value
-            assert ws_after["A1"].value == 30
+            assert ws_after["A1"].value == 30  # type: ignore[union-attr]
 
     def test_create_sheet_proxy_updates_after_sync(self, tmp_path: Path):
         """Verify that proxy from create_sheet gets updated after sync."""
@@ -722,12 +723,12 @@ class TestProxyValueUpdate:
             ws.range("A1:A3").values = [[100], [200], ["=A1+A2"]]
 
             # Before sync, formula is just a string
-            assert ws["A3"].value == "=A1+A2"
+            assert ws["A3"].value == "=A1+A2"  # type: ignore[union-attr]
 
             ctx.sync()
 
             # After sync, should show calculated value
-            assert ws["A3"].value == 300
+            assert ws["A3"].value == 300  # type: ignore[union-attr]
             assert ws.range("A3").values == [[300]]
 
 
@@ -805,7 +806,7 @@ class TestBuildErrorDetails:
             assert len(ctx.workbook.sheetnames) == 2
             assert "Sheet" in ctx.workbook.sheetnames
             assert "Data" in ctx.workbook.sheetnames
-            assert ctx.sheet("Sheet")["A1"].value == "Important data"
+            assert ctx.sheet("Sheet")["A1"].value == "Important data"  # type: ignore[union-attr]
 
     def test_no_auto_remove_for_loaded_workbooks(self, tmp_path: Path):
         """Verify that auto-removal only happens for newly created workbooks."""
@@ -918,12 +919,12 @@ class TestSheetManagement:
 
             # Access sheet to cache it
             _ = ctx.sheet("Data")
-            assert "Data" in ctx._proxy._sheet_cache
+            assert "Data" in ctx._proxy._sheet_cache  # type: ignore[union-attr]
 
             ctx.delete_sheet("Data")
 
             # Should be removed from cache
-            assert "Data" not in ctx._proxy._sheet_cache
+            assert "Data" not in ctx._proxy._sheet_cache  # type: ignore[union-attr]
 
 
 class TestCellFormula:
@@ -938,8 +939,8 @@ class TestCellFormula:
             ws["A1"] = "=SUM(B1:B10)"
             ws["A2"] = "=A1*2"
 
-            assert ws["A1"].formula == "=SUM(B1:B10)"
-            assert ws["A2"].formula == "=A1*2"
+            assert ws["A1"].formula == "=SUM(B1:B10)"  # type: ignore[union-attr]
+            assert ws["A2"].formula == "=A1*2"  # type: ignore[union-attr]
 
     def test_formula_returns_none_for_values(self, tmp_path: Path):
         """Test that .formula returns None for non-formula cells."""
@@ -951,9 +952,9 @@ class TestCellFormula:
             ws["A2"] = "hello"
             ws["A3"] = 3.14
 
-            assert ws["A1"].formula is None
-            assert ws["A2"].formula is None
-            assert ws["A3"].formula is None
+            assert ws["A1"].formula is None  # type: ignore[union-attr]
+            assert ws["A2"].formula is None  # type: ignore[union-attr]
+            assert ws["A3"].formula is None  # type: ignore[union-attr]
 
     def test_formula_returns_none_for_empty(self, tmp_path: Path):
         """Test that .formula returns None for empty cells."""
@@ -961,7 +962,7 @@ class TestCellFormula:
 
         with ExcelContext(path, create=True) as ctx:
             ws = ctx.active
-            assert ws["A1"].formula is None
+            assert ws["A1"].formula is None  # type: ignore[union-attr]
 
 
 class TestRangeDump:

@@ -25,7 +25,6 @@ classifiers = [
 ]
 dependencies = [
     "openpyxl>=3.1.0",
-    "yfinance>=0.2.66",
 ]
 
 [project.urls]
@@ -57,4 +56,5 @@ addopts = "-v"
 [dependency-groups]
 dev = [
     "ipykernel>=7.1.0",
+    "ty>=0.0.7",
 ]
