@@ -11,6 +11,7 @@ Keep heredocs under 100 LoC per tool call. Call `ctx.sync()` frequently to catch
 
 **CRITICAL**
 Remember that formula results do not materialize until either the context manager exits and reenters OR ctx.sync() is called manually.
+For any APIs not available in `headless-excel`, remember that `ws` is just a `openpyxl.Worksheet` object and `ctx.wb` is just a `openpyxl.Workbook`.
 
 ## Creating Files
 
