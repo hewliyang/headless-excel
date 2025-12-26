@@ -184,10 +184,22 @@ with run("existing.xlsx") as ctx:
     revenue_sheet = ctx.sheet("Revenue")
     revenue_sheet['C1'] = '=SUM(A1:B1)'
 
-    # Create new sheet
+    # Create new sheet (at end, or at specific index)
     new_sheet = ctx.create_sheet("Assumptions")
-    new_sheet['A1'] = 'Growth Rate'
-    new_sheet['B1'] = 0.15
+    cover = ctx.create_sheet("Cover", 0)  # insert at front
+
+    # Switch active sheet
+    ctx.active = ctx.sheet("Assumptions")  # by proxy
+    ctx.active = "Revenue"                  # or by name
+
+    # Rename sheet
+    new_sheet.title = "Model Assumptions"
+
+    # Reorder sheets (offset: negative=left, positive=right)
+    ctx.workbook.move_sheet("Revenue", -1)
+
+    # Delete sheet
+    ctx.delete_sheet("OldSheet")
 
     # Auto-syncs on exit
 EOF

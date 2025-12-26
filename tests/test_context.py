@@ -682,3 +682,102 @@ class TestBuildErrorDetails:
             assert len(ctx.workbook.sheetnames) == 2
             assert "Sheet" in ctx.workbook.sheetnames
             assert "Data" in ctx.workbook.sheetnames
+
+
+class TestSheetManagement:
+    def test_set_active_by_proxy(self, tmp_path: Path):
+        """Test setting active sheet using worksheet proxy."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ctx.create_sheet("Data")
+            ctx.create_sheet("Summary")
+
+            # Set active by proxy
+            ctx.active = ctx.sheet("Summary")
+            assert ctx.active.title == "Summary"
+
+            ctx.active = ctx.sheet("Data")
+            assert ctx.active.title == "Data"
+
+    def test_set_active_by_name(self, tmp_path: Path):
+        """Test setting active sheet by name string."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ctx.create_sheet("Data")
+            ctx.create_sheet("Summary")
+
+            # Set active by name
+            ctx.active = "Summary"
+            assert ctx.active.title == "Summary"
+
+            ctx.active = "Data"
+            assert ctx.active.title == "Data"
+
+    def test_set_active_via_workbook_proxy(self, tmp_path: Path):
+        """Test setting active sheet via workbook proxy directly."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ctx.create_sheet("Data")
+            ctx.create_sheet("Summary")
+
+            # Set active via workbook proxy
+            ctx.wb.active = ctx.wb["Summary"]
+            assert ctx.wb.active.title == "Summary"
+
+            ctx.wb.active = "Data"
+            assert ctx.wb.active.title == "Data"
+
+    def test_delete_sheet(self, tmp_path: Path):
+        """Test deleting a sheet."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ctx.create_sheet("Data")
+            ctx.create_sheet("Summary")
+
+            assert "Data" in ctx.workbook.sheetnames
+            assert "Summary" in ctx.workbook.sheetnames
+
+            ctx.delete_sheet("Data")
+
+            assert "Data" not in ctx.workbook.sheetnames
+            assert "Summary" in ctx.workbook.sheetnames
+
+    def test_delete_sheet_not_found(self, tmp_path: Path):
+        """Test that deleting non-existent sheet raises KeyError."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ctx.create_sheet("Data")
+
+            with pytest.raises(KeyError, match="NotFound"):
+                ctx.delete_sheet("NotFound")
+
+    def test_delete_only_sheet_raises(self, tmp_path: Path):
+        """Test that deleting the only sheet raises ValueError."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            # Only one sheet exists
+            with pytest.raises(ValueError, match="Cannot delete the only sheet"):
+                ctx.delete_sheet("Sheet")
+
+    def test_delete_sheet_clears_cache(self, tmp_path: Path):
+        """Test that deleting a sheet clears it from the proxy cache."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ctx.create_sheet("Data")
+            ctx.create_sheet("Summary")
+
+            # Access sheet to cache it
+            _ = ctx.sheet("Data")
+            assert "Data" in ctx._proxy._sheet_cache
+
+            ctx.delete_sheet("Data")
+
+            # Should be removed from cache
+            assert "Data" not in ctx._proxy._sheet_cache

@@ -156,9 +156,50 @@ class ExcelContext:
             raise RuntimeError("No active worksheet")
         return ws
 
+    @active.setter
+    def active(self, sheet: WorksheetProxy | str) -> None:
+        """Set active worksheet by proxy or name.
+
+        Example:
+            ctx.active = ctx.sheet("Revenue")
+            ctx.active = "Revenue"  # Also works
+        """
+        self._dirty = True
+        self.workbook.active = sheet
+
     def sheet(self, name: str) -> WorksheetProxy:
         """Get worksheet by name."""
         return self.workbook[name]
+
+    def delete_sheet(self, name: str) -> None:
+        """Delete a worksheet by name.
+
+        Args:
+            name: Name of the sheet to delete
+
+        Raises:
+            KeyError: If sheet doesn't exist
+            ValueError: If trying to delete the only sheet
+        """
+        if self._workbook is None:
+            raise RuntimeError("Context not initialized")
+
+        if name not in self._workbook.sheetnames:
+            raise KeyError(f"Sheet '{name}' not found")
+
+        if len(self._workbook.sheetnames) == 1:
+            raise ValueError("Cannot delete the only sheet in workbook")
+
+        self._dirty = True
+        del self._workbook[name]
+
+        # Also remove from values workbook if it exists
+        if self._values_workbook is not None and name in self._values_workbook.sheetnames:
+            del self._values_workbook[name]
+
+        # Clear from proxy cache if it exists
+        if self._proxy is not None and name in self._proxy._sheet_cache:
+            del self._proxy._sheet_cache[name]
 
     def create_sheet(self, name: str, index: int | None = None) -> WorksheetProxy:
         """Create a new worksheet.

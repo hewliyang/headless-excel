@@ -72,15 +72,39 @@ The context object provides:
 | Property/Method                  | Description                                 |
 | -------------------------------- | ------------------------------------------- |
 | `workbook` / `wb`                | The workbook proxy for editing and reading  |
-| `active`                         | The active worksheet proxy                  |
+| `active`                         | Get/set active worksheet (assignable)       |
 | `sheet(name)`                    | Get worksheet by name                       |
 | `create_sheet(name)`             | Create new worksheet                        |
+| `delete_sheet(name)`             | Delete worksheet by name                    |
 | `sync(raise_on_errors=False)`    | Save, recalc via LibreOffice, reload        |
 | `read_value(sheet, cell)`        | Helper to read computed value               |
 | `read_range(sheet, range)`       | Helper to read computed values from range   |
 | `apply_style(sheet, range, ...)` | Apply styles (font, fill, etc.) to a range  |
 | `get_formulas(sheet=None)`       | Get all formulas in sheet or workbook       |
 | `values`                         | (Advanced) Raw workbook with data_only=True |
+
+#### Sheet Management
+
+```python
+with run("model.xlsx", create=True) as ctx:
+    # Create sheets (default "Sheet" auto-removed on first create)
+    data = ctx.create_sheet("Data")
+    summary = ctx.create_sheet("Summary")
+    intro = ctx.create_sheet("Intro", 0)  # insert at index
+
+    # Switch active sheet
+    ctx.active = ctx.sheet("Data")  # by proxy
+    ctx.active = "Summary"          # by name
+
+    # Rename sheet
+    ctx.sheet("Data").title = "RawData"
+
+    # Reorder sheets (offset: negative=left, positive=right)
+    ctx.workbook.move_sheet("Summary", -1)
+
+    # Delete sheet
+    ctx.delete_sheet("RawData")
+```
 
 ### `SyncResult`
 

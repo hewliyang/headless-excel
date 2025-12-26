@@ -6,7 +6,7 @@
 
 > this seems useful - need to figure out how to build the deps graph. in excel - can be circular
 
-- [ ] Improve default **repr** for FormulaError, show more details about the error. Make it more similar to what you get out of ctx.sync() (if this returns an error result)
+- [x] Improve default **repr** for FormulaError, show more details about the error. Make it more similar to what you get out of ctx.sync() (if this returns an error result)
 
 - [x] Investigate if `recalc` can somehow save the cached values to the file instead of having to recalc every time
 
@@ -31,7 +31,7 @@ ctx.define_name("GrowthRate", "Assumptions!B6")
 ctx.get_named_ranges()
 ```
 
-# Sheet management utilities
+# Sheet management utilities [X]
 
 ```py
 ctx.active_sheet("{{ sheet name }}")
@@ -41,7 +41,7 @@ ctx.active = ctx.sheet("{{ sheet_name }}") # stick with properties or methods?!
 ctx.delete_sheet("{{ sheet name }}")
 ```
 
-# Improve documentation
+# Improve documentation [X]
 
 1. show >1 cross-sheet example
 2. sheet creation order not documented

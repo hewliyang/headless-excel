@@ -244,6 +244,20 @@ class WorkbookProxy:
         self._sheet_cache[sheet_name] = proxy
         return proxy
 
+    @active.setter
+    def active(self, sheet: WorksheetProxy | str) -> None:
+        """Set active worksheet by proxy or name."""
+        if isinstance(sheet, str):
+            self._formula_wb.active = self._formula_wb[sheet]
+            if self._values_wb is not None:
+                self._values_wb.active = self._values_wb[sheet]
+        elif isinstance(sheet, WorksheetProxy):
+            self._formula_wb.active = sheet._formula_ws
+            if self._values_wb is not None and sheet._values_ws is not None:
+                self._values_wb.active = sheet._values_ws
+        else:
+            raise TypeError(f"Expected WorksheetProxy or str, got {type(sheet)}")
+
     def create_sheet(
         self, title: str | None = None, index: int | None = None
     ) -> WorksheetProxy:
@@ -271,6 +285,9 @@ class WorkbookProxy:
     def __setattr__(self, name: str, value: Any) -> None:
         if name in ("_formula_wb", "_values_wb", "_sheet_cache"):
             object.__setattr__(self, name, value)
+        elif name == "active":
+            # Use our custom setter for active
+            type(self).active.fset(self, value)
         else:
             setattr(self._formula_wb, name, value)
 
