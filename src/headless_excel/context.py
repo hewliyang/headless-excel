@@ -113,10 +113,11 @@ class ExcelContext:
             self._workbook = Workbook()
         elif self.path.exists():
             self._workbook = load_workbook(self.path)
+            self._values_workbook = load_workbook(self.path, data_only=True)
         else:
             raise FileNotFoundError(f"File not found: {path}")
 
-        self._proxy = WorkbookProxy(self._workbook, None)
+        self._proxy = WorkbookProxy(self._workbook, self._values_workbook)
 
     @property
     def workbook(self) -> WorkbookProxy:
@@ -483,7 +484,7 @@ def run(
     path: str | Path,
     create: bool = False,
     auto_sync: bool = True,
-    raise_on_errors: bool = False,
+    raise_on_errors: bool = True,
     recalc_timeout: int = 30,
 ) -> Generator[ExcelContext, None, None]:
     """Run Excel operations with automatic context management.

@@ -8,7 +8,7 @@
 
 - [ ] Improve default **repr** for FormulaError, show more details about the error. Make it more similar to what you get out of ctx.sync() (if this returns an error result)
 
-- [ ] Investigate if `recalc` can somehow save the cached values to the file instead of having to recalc every time
+- [x] Investigate if `recalc` can somehow save the cached values to the file instead of having to recalc every time
 
   - ps: it is. its just that we don't populate `_workbook_values` on enter of the context manager!
 
