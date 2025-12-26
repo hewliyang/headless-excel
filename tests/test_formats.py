@@ -4,7 +4,7 @@ from pathlib import Path
 
 from openpyxl.styles import Font
 
-from headless_excel import Colors, NumberFormats, run
+from headless_excel import Colors, NumberFormats, create, run
 
 
 class TestNumberFormats:
@@ -36,7 +36,7 @@ class TestNumberFormats:
     def test_apply_accounting_format(self, tmp_path: Path):
         """NumberFormats.ACCOUNTING should work with cells."""
         path = tmp_path / "test.xlsx"
-        with run(path, create=True, auto_sync=False) as ctx:
+        with create(path, auto_sync=False) as ctx:
             ctx.active["A1"] = 1234.56
             ctx.active["A1"].number_format = NumberFormats.ACCOUNTING
             ctx.workbook.save(path)
@@ -48,7 +48,7 @@ class TestNumberFormats:
     def test_apply_percentage_format(self, tmp_path: Path):
         """NumberFormats.PERCENTAGE should work with cells."""
         path = tmp_path / "test.xlsx"
-        with run(path, create=True, auto_sync=False) as ctx:
+        with create(path, auto_sync=False) as ctx:
             ctx.active["A1"] = 0.1575
             ctx.active["A1"].number_format = NumberFormats.PERCENTAGE_2DP
             ctx.workbook.save(path)
@@ -59,7 +59,7 @@ class TestNumberFormats:
     def test_apply_style_with_format(self, tmp_path: Path):
         """NumberFormats should work with range.apply_style()."""
         path = tmp_path / "test.xlsx"
-        with run(path, create=True, auto_sync=False) as ctx:
+        with create(path, auto_sync=False) as ctx:
             ctx.active["A1"] = 100
             ctx.active["A2"] = 200
             ctx.active.range("A1:A2").apply_style(number_format=NumberFormats.NUMBER)
@@ -89,7 +89,7 @@ class TestColors:
     def test_apply_color_to_font(self, tmp_path: Path):
         """Colors should work with openpyxl Font."""
         path = tmp_path / "test.xlsx"
-        with run(path, create=True, auto_sync=False) as ctx:
+        with create(path, auto_sync=False) as ctx:
             ctx.active["A1"] = 100
             ctx.active["A1"].font = Font(color=Colors.HARDCODE)
 

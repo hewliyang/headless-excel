@@ -19,15 +19,18 @@ This is especially painful for AI agents that need immediate feedback on formula
 `headless-excel` provides an OfficeJS-inspired API that handles all of this automatically:
 
 ```python
-from headless_excel import run
+from headless_excel import create, run
 
-with run("model.xlsx") as ctx:
-    # Make changes using openpyxl workbook
+# Create new workbook
+with create("model.xlsx") as ctx:
     ws = ctx.active
     ws["A1"] = 100
     ws["A2"] = "=A1*2"
     ws["A3"] = "=SUM(A1:A2)"
+    # auto-syncs on exit
 
+# Open existing workbook
+with run("model.xlsx") as ctx:
     # sync() saves, recalculates via LibreOffice, and reloads
     result = ctx.sync()
 
@@ -41,17 +44,29 @@ with run("model.xlsx") as ctx:
 
 ## API
 
-### `run(path, create=False, auto_sync=True, raise_on_errors=False)`
+### `create(path, overwrite=False, auto_sync=True, raise_on_errors=True)`
 
-Context manager for Excel operations. Similar to OfficeJS `Excel.run()`.
+Create a new Excel file.
+
+```python
+from headless_excel import create
+
+# Create new workbook
+with create("new.xlsx") as ctx:
+    ctx.active["A1"] = "Hello"
+    # auto-syncs on exit
+
+# Overwrite existing file
+with create("existing.xlsx", overwrite=True) as ctx:
+    ctx.active["A1"] = "Fresh start"
+```
+
+### `run(path, auto_sync=True, raise_on_errors=True)`
+
+Open an existing Excel file. Similar to OfficeJS `Excel.run()`.
 
 ```python
 from headless_excel import run
-
-# Create new workbook
-with run("new.xlsx", create=True) as ctx:
-    ctx.active["A1"] = "Hello"
-    # auto-syncs on exit
 
 # Load existing, manual sync
 with run("existing.xlsx", auto_sync=False) as ctx:
@@ -82,7 +97,7 @@ The context object provides:
 #### Sheet Management
 
 ```python
-with run("model.xlsx", create=True) as ctx:
+with create("model.xlsx") as ctx:
     # Create sheets (default "Sheet" auto-removed on first create)
     data = ctx.create_sheet("Data")
     summary = ctx.create_sheet("Summary")
@@ -107,7 +122,7 @@ with run("model.xlsx", create=True) as ctx:
 Use `sheet.range(ref)` for bulk read/write operations on cell ranges. This avoids off-by-one errors when working with 2D data.
 
 ```python
-with run("model.xlsx", create=True) as ctx:
+with create("model.xlsx") as ctx:
     ws = ctx.active
 
     # Write 2D array to range (validates dimensions)
@@ -142,7 +157,7 @@ Apply styles to all cells in a range at once:
 ```python
 from openpyxl.styles import Font, PatternFill, Alignment
 
-with run("model.xlsx", create=True) as ctx:
+with create("model.xlsx") as ctx:
     ws = ctx.active
     ws.range("A1:D1").values = [["Q1", "Q2", "Q3", "Q4"]]
 

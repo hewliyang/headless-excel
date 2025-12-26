@@ -141,10 +141,10 @@ CRITICAL:
 
 ```bash
 uv run python <<'EOF'
-from headless_excel import run
+from headless_excel import create
 from openpyxl.styles import Font, PatternFill, Alignment
 
-with run("output.xlsx", create=True) as ctx:
+with create("output.xlsx") as ctx:
     ws = ctx.active
 
     # Add data and formulas
@@ -266,10 +266,10 @@ EOF
 ```bash
 # Automatic error checking with auto_sync
 uv run python <<'EOF'
-from headless_excel import run, FormulaError
+from headless_excel import create, FormulaError
 
 try:
-    with run("model.xlsx", create=True) as ctx:
+    with create("model.xlsx") as ctx:
         ctx.active['A1'] = '=INVALID_REF'
         # Exits with sync, detects error automatically
 except FormulaError as e:

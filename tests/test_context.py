@@ -1,4 +1,4 @@
-"""Tests for ExcelContext and run()."""
+"""Tests for ExcelContext, run(), and create()."""
 
 from pathlib import Path
 
@@ -13,7 +13,14 @@ from openpyxl.styles import (
     Side,
 )
 
-from headless_excel import ErrorDetail, ExcelContext, FormulaError, SyncResult, run
+from headless_excel import (
+    ErrorDetail,
+    ExcelContext,
+    FormulaError,
+    SyncResult,
+    create,
+    run,
+)
 
 
 class TestExcelContext:
@@ -66,27 +73,70 @@ class TestExcelContext:
 
 
 class TestRun:
-    def test_run_create(self, tmp_path: Path):
+    def test_run_opens_existing(self, tmp_path: Path):
+        """Test that run() opens an existing file."""
         path = tmp_path / "test.xlsx"
-        with run(path, create=True, auto_sync=False) as ctx:
+        with create(path, auto_sync=False) as ctx:
+            ctx.active["A1"] = "Hello"
+            ctx.workbook.save(path)
+
+        with run(path, auto_sync=False) as ctx:
+            assert ctx.active["A1"].value == "Hello"
+
+    def test_run_file_not_found(self, tmp_path: Path):
+        """Test that run() raises FileNotFoundError for missing file."""
+        path = tmp_path / "nonexistent.xlsx"
+        with pytest.raises(FileNotFoundError):
+            with run(path) as _:
+                pass
+
+    def test_run_auto_sync_false(self, tmp_path: Path):
+        path = tmp_path / "test.xlsx"
+        with create(path, auto_sync=False) as ctx:
+            ctx.active["A1"] = 100
+            ctx.workbook.save(path)
+            # No auto sync, so values not available
+
+
+class TestCreate:
+    def test_create_new_file(self, tmp_path: Path):
+        path = tmp_path / "test.xlsx"
+        with create(path, auto_sync=False) as ctx:
             ctx.active["A1"] = "Created"
             ctx.workbook.save(path)
 
         assert path.exists()
 
-    def test_run_auto_sync_false(self, tmp_path: Path):
+    def test_create_file_exists_raises(self, tmp_path: Path):
+        """Test that create() raises FileExistsError when file exists."""
         path = tmp_path / "test.xlsx"
-        with run(path, create=True, auto_sync=False) as ctx:
-            ctx.active["A1"] = 100
+        with create(path, auto_sync=False) as ctx:
             ctx.workbook.save(path)
-            # No auto sync, so values not available
 
-    def test_run_raise_on_errors_with_manual_sync(self, tmp_path: Path):
-        """Test that raise_on_errors in run() works even after manual sync."""
+        with pytest.raises(FileExistsError, match="already exists"):
+            with create(path) as ctx:
+                pass
+
+    def test_create_overwrite(self, tmp_path: Path):
+        """Test that create(overwrite=True) replaces existing file."""
+        path = tmp_path / "test.xlsx"
+        with create(path, auto_sync=False) as ctx:
+            ctx.active["A1"] = "Original"
+            ctx.workbook.save(path)
+
+        with create(path, overwrite=True, auto_sync=False) as ctx:
+            ctx.active["A1"] = "Replaced"
+            ctx.workbook.save(path)
+
+        with run(path) as ctx:
+            assert ctx.active["A1"].value == "Replaced"
+
+    def test_create_raise_on_errors_with_manual_sync(self, tmp_path: Path):
+        """Test that raise_on_errors in create() works even after manual sync."""
         path = tmp_path / "test.xlsx"
 
         with pytest.raises(SystemExit) as exc_info:
-            with run(path, create=True, raise_on_errors=True) as ctx:
+            with create(path, raise_on_errors=True) as ctx:
                 ws = ctx.active
                 ws["A1"] = 100
                 ws["A2"] = "=A1+Sheet2!A1"
@@ -98,12 +148,12 @@ class TestRun:
         assert "Formula errors" in str(exc_info.value)
         assert "#NAME?" in str(exc_info.value)
 
-    def test_run_raise_on_errors_without_manual_sync(self, tmp_path: Path):
-        """Test that raise_on_errors in run() works with auto_sync."""
+    def test_create_raise_on_errors_without_manual_sync(self, tmp_path: Path):
+        """Test that raise_on_errors in create() works with auto_sync."""
         path = tmp_path / "test.xlsx"
 
         with pytest.raises(SystemExit) as exc_info:
-            with run(path, create=True, raise_on_errors=True) as ctx:
+            with create(path, raise_on_errors=True) as ctx:
                 ws = ctx.active
                 ws["A1"] = 100
                 ws["A2"] = "=A1+Sheet2!A1"
@@ -111,11 +161,11 @@ class TestRun:
         assert "Formula errors" in str(exc_info.value)
         assert "#NAME?" in str(exc_info.value)
 
-    def test_run_raise_on_errors_false(self, tmp_path: Path):
+    def test_create_raise_on_errors_false(self, tmp_path: Path):
         """Test that raise_on_errors=False does not raise."""
         path = tmp_path / "test.xlsx"
 
-        with run(path, create=True, raise_on_errors=False) as ctx:
+        with create(path, raise_on_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 100
             ws["A2"] = "=A1+Sheet2!A1"
@@ -298,7 +348,10 @@ class TestRangeProxy:
             # Formulas are preserved and accessible via .formulas
             assert ctx.active.formulas == {"C1": "=A1+B1", "C2": "=A2+B2"}
             # Range formulas returns dict (same format as sheet.formulas)
-            assert ctx.active.range("C1:C2").formulas == {"C1": "=A1+B1", "C2": "=A2+B2"}
+            assert ctx.active.range("C1:C2").formulas == {
+                "C1": "=A1+B1",
+                "C2": "=A2+B2",
+            }
 
     def test_range_invalid_reference(self, tmp_path: Path):
         """Test that invalid range reference raises ValueError."""
@@ -624,7 +677,7 @@ class TestProxyValueUpdate:
     def test_proxy_shows_calculated_value_after_sync(self, tmp_path: Path):
         """Verify that worksheet proxy returns calculated values after sync."""
         path = tmp_path / "test.xlsx"
-        with run(path, create=True, auto_sync=False) as ctx:
+        with create(path, auto_sync=False) as ctx:
             # Use the proxy returned by create_sheet directly (don't reassign to ctx.active)
             ws = ctx.create_sheet("Sheet1", 0)
 
@@ -645,7 +698,7 @@ class TestProxyValueUpdate:
     def test_proxy_identity_maintained_after_sync(self, tmp_path: Path):
         """Verify that worksheet proxy object identity is maintained after sync."""
         path = tmp_path / "test.xlsx"
-        with run(path, create=True, auto_sync=False) as ctx:
+        with create(path, auto_sync=False) as ctx:
             ws_before = ctx.active
             ws_before["A1"] = "=10+20"
 
@@ -661,7 +714,7 @@ class TestProxyValueUpdate:
     def test_create_sheet_proxy_updates_after_sync(self, tmp_path: Path):
         """Verify that proxy from create_sheet gets updated after sync."""
         path = tmp_path / "test.xlsx"
-        with run(path, create=True, auto_sync=False) as ctx:
+        with create(path, auto_sync=False) as ctx:
             # Keep reference to proxy returned by create_sheet
             ws = ctx.create_sheet("Data", 0)
 

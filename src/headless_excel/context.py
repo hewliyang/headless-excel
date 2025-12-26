@@ -397,15 +397,39 @@ class ExcelContext:
         self.close()
 
 
+def _run_context(
+    path: str | Path,
+    create_mode: bool,
+    auto_sync: bool,
+    raise_on_errors: bool,
+    recalc_timeout: int,
+) -> Generator[ExcelContext, None, None]:
+    """Internal context manager for Excel operations."""
+    ctx = ExcelContext(path, create=create_mode, recalc_timeout=recalc_timeout)
+    try:
+        yield ctx
+        if auto_sync:
+            result = ctx.sync(raise_on_errors=False)
+            if raise_on_errors and not result.success:
+                err = FormulaError(
+                    errors=result.errors,
+                    total=result.total_errors,
+                    error_details=result.error_details,
+                )
+                # hack to suppress traceback to reduce context pollution
+                raise SystemExit(str(err))
+    finally:
+        ctx.close()
+
+
 @contextmanager
 def run(
     path: str | Path,
-    create: bool = False,
     auto_sync: bool = True,
     raise_on_errors: bool = True,
     recalc_timeout: int = 30,
 ) -> Generator[ExcelContext, None, None]:
-    """Run Excel operations with automatic context management.
+    """Open an existing Excel file for operations.
 
     Similar to OfficeJS Excel.run() - provides a context, handles cleanup,
     and optionally auto-syncs on exit.
@@ -423,28 +447,55 @@ def run(
             print(ctx.values.active["A1"].value)
 
     Args:
-        path: Path to the Excel file
-        create: If True, create new workbook
+        path: Path to existing Excel file
         auto_sync: If True, automatically sync on context exit
         raise_on_errors: If True, raise FormulaError on sync errors
-        else, raises SystemExit with error message to supress traceback
+            else, raises SystemExit with error message to suppress traceback
         recalc_timeout: Timeout in seconds for LibreOffice recalculation
 
     Yields:
         ExcelContext for operations
+
+    Raises:
+        FileNotFoundError: If file does not exist
     """
-    ctx = ExcelContext(path, create=create, recalc_timeout=recalc_timeout)
-    try:
-        yield ctx
-        if auto_sync:
-            result = ctx.sync(raise_on_errors=False)
-            if raise_on_errors and not result.success:
-                err = FormulaError(
-                    errors=result.errors,
-                    total=result.total_errors,
-                    error_details=result.error_details,
-                )
-                # hack to suppress traceback to reduce context pollution
-                raise SystemExit(str(err))
-    finally:
-        ctx.close()
+    yield from _run_context(path, False, auto_sync, raise_on_errors, recalc_timeout)
+
+
+@contextmanager
+def create(
+    path: str | Path,
+    overwrite: bool = False,
+    auto_sync: bool = True,
+    raise_on_errors: bool = True,
+    recalc_timeout: int = 30,
+) -> Generator[ExcelContext, None, None]:
+    """Create a new Excel file.
+
+    Example:
+        with create("new.xlsx") as ctx:
+            ctx.active["A1"] = "Hello"
+            # auto-syncs on exit
+
+        # Overwrite existing file:
+        with create("existing.xlsx", overwrite=True) as ctx:
+            ctx.active["A1"] = "Fresh start"
+
+    Args:
+        path: Path for the new Excel file
+        overwrite: If True, overwrite existing file; if False, raise FileExistsError
+        auto_sync: If True, automatically sync on context exit
+        raise_on_errors: If True, raise FormulaError on sync errors
+            else, raises SystemExit with error message to suppress traceback
+        recalc_timeout: Timeout in seconds for LibreOffice recalculation
+
+    Yields:
+        ExcelContext for operations
+
+    Raises:
+        FileExistsError: If file exists and overwrite=False
+    """
+    p = Path(path)
+    if p.exists() and not overwrite:
+        raise FileExistsError(f"File already exists: {path}. Use overwrite=True to replace.")
+    yield from _run_context(path, True, auto_sync, raise_on_errors, recalc_timeout)
