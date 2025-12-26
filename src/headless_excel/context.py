@@ -66,7 +66,11 @@ class SyncResult:
     def raise_on_errors(self) -> None:
         """Raise FormulaError if any errors were found."""
         if not self.success:
-            raise FormulaError(errors=self.errors, total=self.total_errors)
+            raise FormulaError(
+                errors=self.errors,
+                total=self.total_errors,
+                error_details=self.error_details,
+            )
 
 
 class ExcelContext:
@@ -509,6 +513,7 @@ def run(
         create: If True, create new workbook
         auto_sync: If True, automatically sync on context exit
         raise_on_errors: If True, raise FormulaError on sync errors
+        else, raises SystemExit with error message to supress traceback
         recalc_timeout: Timeout in seconds for LibreOffice recalculation
 
     Yields:
@@ -518,6 +523,14 @@ def run(
     try:
         yield ctx
         if auto_sync:
-            ctx.sync(raise_on_errors=raise_on_errors)
+            result = ctx.sync(raise_on_errors=False)
+            if raise_on_errors and not result.success:
+                err = FormulaError(
+                    errors=result.errors,
+                    total=result.total_errors,
+                    error_details=result.error_details,
+                )
+                # hack to suppress traceback to reduce context pollution
+                raise SystemExit(str(err))
     finally:
         ctx.close()

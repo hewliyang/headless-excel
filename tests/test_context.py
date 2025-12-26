@@ -97,8 +97,8 @@ class TestRun:
         """
         path = tmp_path / "test.xlsx"
 
-        # Should raise on exit even though we manually synced without raise_on_errors
-        with pytest.raises(FormulaError):
+        # Should raise SystemExit on exit (no traceback for agent-friendliness)
+        with pytest.raises(SystemExit) as exc_info:
             with run(path, create=True, raise_on_errors=True) as ctx:
                 ws = ctx.active
                 ws["A1"] = 100
@@ -110,19 +110,28 @@ class TestRun:
                 assert not result.success
                 assert result.total_errors == 1
 
+        # Verify error message contains details
+        assert "Formula errors" in str(exc_info.value)
+        assert "#NAME?" in str(exc_info.value)
+
                 # But should raise on context exit due to run(raise_on_errors=True)
 
     def test_run_raise_on_errors_without_manual_sync(self, tmp_path: Path):
         """Test that raise_on_errors in run() works with auto_sync."""
         path = tmp_path / "test.xlsx"
 
-        with pytest.raises(FormulaError):
+        # Should raise SystemExit on exit (no traceback for agent-friendliness)
+        with pytest.raises(SystemExit) as exc_info:
             with run(path, create=True, raise_on_errors=True) as ctx:
                 ws = ctx.active
                 ws["A1"] = 100
                 # Reference a non-existent sheet - creates #NAME? error
                 ws["A2"] = "=A1+Sheet2!A1"
                 # No manual sync - should raise on auto_sync at exit
+
+        # Verify error message contains details
+        assert "Formula errors" in str(exc_info.value)
+        assert "#NAME?" in str(exc_info.value)
 
     def test_run_raise_on_errors_false(self, tmp_path: Path):
         """Test that raise_on_errors=False does not raise."""
@@ -174,9 +183,30 @@ class TestFormulaError:
             total=2,
         )
         s = str(err)
-        assert "2 formula error" in s
+        assert "Formula errors (2):" in s
         assert "#REF!" in s
         assert "#NAME?" in s
+
+    def test_formula_error_str_with_details(self):
+        err = FormulaError(
+            errors={"#DIV/0!": ["Sheet1!A3"]},
+            total=1,
+            error_details=[
+                ErrorDetail(
+                    location="Sheet1!A3",
+                    error="#DIV/0!",
+                    formula="=A1/A2",
+                    neighbors={"Sheet1!A1": 10, "Sheet1!A2": 0},
+                )
+            ],
+        )
+        s = str(err)
+        assert "Formula errors (1):" in s
+        assert "Sheet1!A3: #DIV/0!" in s
+        assert "formula==A1/A2" in s
+        assert "inputs={" in s
+        assert "Sheet1!A1=10" in s
+        assert "Sheet1!A2=0" in s
 
 
 class TestApplyStyle:
