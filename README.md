@@ -57,7 +57,7 @@ with run("new.xlsx", create=True) as ctx:
 with run("existing.xlsx", auto_sync=False) as ctx:
     ctx.active["A1"] = "=B1+C1"
     result = ctx.sync()
-    print(ctx.active["A1"].value)  # or ctx.read_value("Sheet1", "A1")
+    print(ctx.active["A1"].value)
 
 # Raise on formula errors
 with run("model.xlsx", raise_on_errors=True) as ctx:
@@ -69,19 +69,15 @@ with run("model.xlsx", raise_on_errors=True) as ctx:
 
 The context object provides:
 
-| Property/Method                  | Description                                 |
-| -------------------------------- | ------------------------------------------- |
-| `workbook` / `wb`                | The workbook proxy for editing and reading  |
-| `active`                         | Get/set active worksheet (assignable)       |
-| `sheet(name)`                    | Get worksheet by name                       |
-| `create_sheet(name)`             | Create new worksheet                        |
-| `delete_sheet(name)`             | Delete worksheet by name                    |
-| `sync(raise_on_errors=False)`    | Save, recalc via LibreOffice, reload        |
-| `read_value(sheet, cell)`        | Helper to read computed value               |
-| `read_range(sheet, range)`       | Helper to read computed values from range   |
-| `apply_style(sheet, range, ...)` | Apply styles (font, fill, etc.) to a range  |
-| `get_formulas(sheet=None)`       | Get all formulas in sheet or workbook       |
-| `values`                         | (Advanced) Raw workbook with data_only=True |
+| Property/Method              | Description                                |
+| ---------------------------- | ------------------------------------------ |
+| `workbook` / `wb`            | The workbook proxy for editing and reading |
+| `active`                     | Get/set active worksheet (assignable)      |
+| `sheet(name)`                | Get worksheet by name                      |
+| `create_sheet(name)`         | Create new worksheet                       |
+| `delete_sheet(name)`         | Delete worksheet by name                   |
+| `sync(raise_on_errors=True)` | Save, recalc via LibreOffice, reload       |
+| `values`                     | Raw workbook with data_only=True           |
 
 #### Sheet Management
 
@@ -104,6 +100,59 @@ with run("model.xlsx", create=True) as ctx:
 
     # Delete sheet
     ctx.delete_sheet("RawData")
+```
+
+### Ranges
+
+Use `sheet.range(ref)` for bulk read/write operations on cell ranges. This avoids off-by-one errors when working with 2D data.
+
+```python
+with run("model.xlsx", create=True) as ctx:
+    ws = ctx.active
+
+    # Write 2D array to range (validates dimensions)
+    # Can include formulas (strings starting with '=')
+    ws.range("A1:C3").values = [
+        [10, 20, "=A1+B1"],
+        [30, 40, "=A2+B2"],
+        [50, 60, "=SUM(C1:C2)"],
+    ]
+
+    # Read 2D array from range
+    data = ws.range("A1:C3").values  # [[10, 20, "=A1+B1"], ...]
+
+    # Get range shape
+    r = ws.range("B2:E5")
+    r.shape      # (4, 4)
+    r.num_rows   # 4
+    r.num_cols   # 4
+
+    # Read formulas (None for non-formula cells)
+    ws["A1"] = "=B1+C1"
+    ws.range("A1:B1").formulas  # [["=B1+C1", None]]
+
+    # Get all formulas in sheet
+    ws.formulas  # {"A1": "=B1+C1", ...}
+```
+
+#### Range Styling
+
+Apply styles to all cells in a range at once:
+
+```python
+from openpyxl.styles import Font, PatternFill, Alignment
+
+with run("model.xlsx", create=True) as ctx:
+    ws = ctx.active
+    ws.range("A1:D1").values = [["Q1", "Q2", "Q3", "Q4"]]
+
+    # Apply multiple styles
+    ws.range("A1:D1").apply_style(
+        font=Font(bold=True, size=12),
+        fill=PatternFill(start_color="CCCCCC", fill_type="solid"),
+        alignment=Alignment(horizontal="center"),
+        number_format="#,##0",
+    )
 ```
 
 ### `SyncResult`
@@ -145,8 +194,8 @@ with run("model.xlsx") as ctx:
     ws['B1'] = 0.1575
     ws['B1'].number_format = NumberFormats.PERCENTAGE_2DP
 
-    # Apply to range
-    ctx.apply_style("Sheet", "C1:C10", number_format=NumberFormats.NUMBER)
+    # Apply format to range
+    ws.range("C1:C10").apply_style(number_format=NumberFormats.NUMBER)
 
     # Color conventions for financial models
     ws['D1'] = 100  # Hardcoded input
@@ -175,7 +224,7 @@ with run("model.xlsx") as ctx:
    - Runs LibreOffice in headless mode with a macro to recalculate all formulas
    - Reloads the workbook twice: once for formulas, once with `data_only=True` for values
    - Scans for Excel error values (`#REF!`, `#NAME?`, `#VALUE!`, etc.)
-3. **Read**: Access computed values via `ctx.values` or `ctx.read_value()`
+3. **Read**: Access computed values via cell `.value` or `range.values`
 
 ## For AI Agents
 
@@ -201,7 +250,7 @@ def build_model(path: str):
             # ... fix and retry
 
         # Validate computed values
-        actual = ctx.read_value("Sheet1", "A1")
+        actual = ws["A1"].value
         if actual != expected:
             # ... adjust formula
 ```

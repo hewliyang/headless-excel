@@ -57,12 +57,12 @@ class TestNumberFormats:
             assert ctx.active["A1"].number_format == NumberFormats.PERCENTAGE_2DP
 
     def test_apply_style_with_format(self, tmp_path: Path):
-        """NumberFormats should work with apply_style()."""
+        """NumberFormats should work with range.apply_style()."""
         path = tmp_path / "test.xlsx"
         with run(path, create=True, auto_sync=False) as ctx:
             ctx.active["A1"] = 100
             ctx.active["A2"] = 200
-            ctx.apply_style("Sheet", "A1:A2", number_format=NumberFormats.NUMBER)
+            ctx.active.range("A1:A2").apply_style(number_format=NumberFormats.NUMBER)
             ctx.workbook.save(path)
 
         with run(path, auto_sync=False) as ctx:

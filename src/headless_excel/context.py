@@ -10,14 +10,6 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import (
-    Alignment,
-    Border,
-    Font,
-    GradientFill,
-    PatternFill,
-    Protection,
-)
 
 from headless_excel.errors import FormulaError, RecalcError, SyncError
 from headless_excel.proxy import WorkbookProxy, WorksheetProxy
@@ -194,7 +186,10 @@ class ExcelContext:
         del self._workbook[name]
 
         # Also remove from values workbook if it exists
-        if self._values_workbook is not None and name in self._values_workbook.sheetnames:
+        if (
+            self._values_workbook is not None
+            and name in self._values_workbook.sheetnames
+        ):
             del self._values_workbook[name]
 
         # Clear from proxy cache if it exists
@@ -303,128 +298,6 @@ class ExcelContext:
             sync_result.raise_on_errors()
 
         return sync_result
-
-    def read_value(self, sheet: str, cell: str) -> Any:
-        """Read a materialized value after sync.
-
-        Args:
-            sheet: Sheet name
-            cell: Cell reference (e.g., "A1")
-
-        Returns:
-            The computed value of the cell
-        """
-        if self._values_workbook is None:
-            raise RuntimeError("Call sync() first to materialize values")
-        return self._values_workbook[sheet][cell].value
-
-    def read_range(self, sheet: str, range_ref: str) -> list[list[Any]]:
-        """Read a range of materialized values after sync.
-
-        Args:
-            sheet: Sheet name
-            range_ref: Range reference (e.g., "A1:C3")
-
-        Returns:
-            2D list of computed values
-        """
-        if self._values_workbook is None:
-            raise RuntimeError("Call sync() first to materialize values")
-
-        ws = self._values_workbook[sheet]
-        rows = []
-        for row in ws[range_ref]:
-            rows.append([cell.value for cell in row])
-        return rows
-
-    def apply_style(
-        self,
-        sheet: str,
-        range_ref: str,
-        font: Font | None = None,
-        fill: PatternFill | None = None,
-        gradient_fill: GradientFill | None = None,
-        alignment: Alignment | None = None,
-        border: Border | None = None,
-        protection: Protection | None = None,
-        number_format: str | None = None,
-    ) -> None:
-        """Apply styles to a range of cells.
-
-        Args:
-            sheet: Sheet name
-            range_ref: Cell or range reference (e.g., "A1" or "A1:G5")
-            font: Font style to apply
-            fill: Fill/background style to apply (PatternFill)
-            gradient_fill: Gradient fill style to apply (GradientFill)
-            alignment: Alignment style to apply
-            border: Border style to apply
-            protection: Protection settings to apply
-            number_format: Number format string (e.g., '#,##0;(#,##0);-')
-
-        Note:
-            Only one of 'fill' or 'gradient_fill' should be specified.
-            If both are provided, gradient_fill takes precedence.
-        """
-        if self._workbook is None:
-            raise RuntimeError("Context not initialized")
-
-        self._dirty = True
-        ws = self._workbook[sheet]
-        cells = ws[range_ref]
-
-        if not isinstance(cells, tuple):
-            cells = ((cells,),)
-
-        for row in cells:
-            for cell in row:
-                if font is not None:
-                    cell.font = font
-                if gradient_fill is not None:
-                    cell.fill = gradient_fill
-                elif fill is not None:
-                    cell.fill = fill
-                if alignment is not None:
-                    cell.alignment = alignment
-                if border is not None:
-                    cell.border = border
-                if protection is not None:
-                    cell.protection = protection
-                if number_format is not None:
-                    cell.number_format = number_format
-
-    def get_formulas(self, sheet: str | None = None) -> dict[str, str]:
-        """Get all formulas in a sheet or the entire workbook.
-
-        Args:
-            sheet: Sheet name, or None for all sheets
-
-        Returns:
-            Dict mapping cell location to formula string.
-            Keys are 'SheetName!A1' format when querying all sheets,
-            or just 'A1' format when querying a single sheet.
-        """
-        if self._workbook is None:
-            raise RuntimeError("Context not initialized")
-
-        formulas: dict[str, str] = {}
-        sheets = [sheet] if sheet else self._workbook.sheetnames
-
-        for sheet_name in sheets:
-            ws = self._workbook[sheet_name]
-            for row in ws.iter_rows():
-                for cell in row:
-                    if (
-                        cell.value is not None
-                        and isinstance(cell.value, str)
-                        and cell.value.startswith("=")
-                    ):
-                        if sheet:
-                            formulas[cell.coordinate] = cell.value
-                        else:
-                            formulas[f"{sheet_name}!{cell.coordinate}"] = cell.value
-
-        return formulas
 
     def _extract_cell_refs(self, formula: str, default_sheet: str) -> list[str]:
         """Extract cell references from a formula.

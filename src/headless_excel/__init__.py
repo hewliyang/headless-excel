@@ -3,7 +3,7 @@
 from headless_excel.context import ErrorDetail, ExcelContext, SyncResult, run
 from headless_excel.errors import ExcelError, FormulaError, RecalcError, SyncError
 from headless_excel.formats import Colors, NumberFormats
-from headless_excel.proxy import CellProxy, WorkbookProxy, WorksheetProxy
+from headless_excel.proxy import CellProxy, RangeProxy, WorkbookProxy, WorksheetProxy
 
 __all__ = [
     "CellProxy",
@@ -13,6 +13,7 @@ __all__ = [
     "ExcelError",
     "FormulaError",
     "NumberFormats",
+    "RangeProxy",
     "RecalcError",
     "SyncError",
     "SyncResult",

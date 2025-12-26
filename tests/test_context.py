@@ -64,13 +64,6 @@ class TestExcelContext:
             with pytest.raises(RuntimeError, match="Call sync"):
                 _ = ctx.values
 
-    def test_read_value_before_sync_raises(self, tmp_path: Path):
-        path = tmp_path / "test.xlsx"
-        with ExcelContext(path, create=True) as ctx:
-            ctx.active["A1"] = 100
-            with pytest.raises(RuntimeError, match="Call sync"):
-                ctx.read_value("Sheet", "A1")
-
 
 class TestRun:
     def test_run_create(self, tmp_path: Path):
@@ -89,47 +82,32 @@ class TestRun:
             # No auto sync, so values not available
 
     def test_run_raise_on_errors_with_manual_sync(self, tmp_path: Path):
-        """Test that raise_on_errors in run() works even after manual sync.
-
-        This test catches a bug where calling ctx.sync() without raise_on_errors
-        would prevent the context manager from raising on exit, even when
-        run() was called with raise_on_errors=True.
-        """
+        """Test that raise_on_errors in run() works even after manual sync."""
         path = tmp_path / "test.xlsx"
 
-        # Should raise SystemExit on exit (no traceback for agent-friendliness)
         with pytest.raises(SystemExit) as exc_info:
             with run(path, create=True, raise_on_errors=True) as ctx:
                 ws = ctx.active
                 ws["A1"] = 100
-                # Reference a non-existent sheet - creates #NAME? error
                 ws["A2"] = "=A1+Sheet2!A1"
 
-                # Manual sync without raise_on_errors - should not raise here
                 result = ctx.sync(raise_on_errors=False)
                 assert not result.success
                 assert result.total_errors == 1
 
-        # Verify error message contains details
         assert "Formula errors" in str(exc_info.value)
         assert "#NAME?" in str(exc_info.value)
-
-                # But should raise on context exit due to run(raise_on_errors=True)
 
     def test_run_raise_on_errors_without_manual_sync(self, tmp_path: Path):
         """Test that raise_on_errors in run() works with auto_sync."""
         path = tmp_path / "test.xlsx"
 
-        # Should raise SystemExit on exit (no traceback for agent-friendliness)
         with pytest.raises(SystemExit) as exc_info:
             with run(path, create=True, raise_on_errors=True) as ctx:
                 ws = ctx.active
                 ws["A1"] = 100
-                # Reference a non-existent sheet - creates #NAME? error
                 ws["A2"] = "=A1+Sheet2!A1"
-                # No manual sync - should raise on auto_sync at exit
 
-        # Verify error message contains details
         assert "Formula errors" in str(exc_info.value)
         assert "#NAME?" in str(exc_info.value)
 
@@ -137,14 +115,11 @@ class TestRun:
         """Test that raise_on_errors=False does not raise."""
         path = tmp_path / "test.xlsx"
 
-        # Should not raise
         with run(path, create=True, raise_on_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 100
-            # Reference a non-existent sheet - creates #NAME? error
             ws["A2"] = "=A1+Sheet2!A1"
 
-        # Verify file was created and has the error
         assert path.exists()
 
 
@@ -209,12 +184,145 @@ class TestFormulaError:
         assert "Sheet1!A2=0" in s
 
 
-class TestApplyStyle:
+class TestRangeProxy:
+    """Tests for the RangeProxy class and sheet.range() method."""
+
+    def test_range_values_read(self, tmp_path: Path):
+        """Test reading values from a range."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = 1
+            ctx.active["B1"] = 2
+            ctx.active["A2"] = 3
+            ctx.active["B2"] = 4
+            ctx.workbook.save(path)
+
+        with ExcelContext(path) as ctx:
+            r = ctx.active.range("A1:B2")
+            assert r.values == [[1, 2], [3, 4]]
+
+    def test_range_values_write(self, tmp_path: Path):
+        """Test writing values to a range."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            r = ctx.active.range("A1:C2")
+            r.values = [[1, 2, 3], [4, 5, 6]]
+            ctx.workbook.save(path)
+
+        with ExcelContext(path) as ctx:
+            assert ctx.active["A1"].value == 1
+            assert ctx.active["C2"].value == 6
+
+    def test_range_values_write_row_mismatch(self, tmp_path: Path):
+        """Test that row count mismatch raises ValueError."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            r = ctx.active.range("A1:B2")  # 2 rows expected
+            with pytest.raises(ValueError, match="Row count mismatch"):
+                r.values = [[1, 2]]  # only 1 row
+
+    def test_range_values_write_col_mismatch(self, tmp_path: Path):
+        """Test that column count mismatch raises ValueError."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            r = ctx.active.range("A1:C2")  # 3 cols expected
+            with pytest.raises(ValueError, match="Column count mismatch"):
+                r.values = [[1, 2], [3, 4]]  # only 2 cols
+
+    def test_range_values_write_not_list(self, tmp_path: Path):
+        """Test that non-list data raises ValueError."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            r = ctx.active.range("A1:B2")
+            with pytest.raises(ValueError, match="must be a 2D list"):
+                r.values = "not a list"
+
+    def test_range_values_write_row_not_list(self, tmp_path: Path):
+        """Test that non-list row raises ValueError."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            r = ctx.active.range("A1:B2")
+            with pytest.raises(ValueError, match="Row 0 must be a list"):
+                r.values = ["not", "nested"]
+
+    def test_range_shape(self, tmp_path: Path):
+        """Test range shape property."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            r = ctx.active.range("B3:E6")
+            assert r.shape == (4, 4)
+            assert r.num_rows == 4
+            assert r.num_cols == 4
+
+    def test_range_single_cell(self, tmp_path: Path):
+        """Test range with single cell reference."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            r = ctx.active.range("C5")
+            assert r.shape == (1, 1)
+            r.values = [[42]]
+            ctx.workbook.save(path)
+
+        with ExcelContext(path) as ctx:
+            assert ctx.active["C5"].value == 42
+
+    def test_range_formulas(self, tmp_path: Path):
+        """Test reading formulas from a range."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = 10
+            ctx.active["B1"] = "=A1*2"
+            ctx.active["A2"] = "=A1+5"
+            ctx.active["B2"] = 30
+
+            r = ctx.active.range("A1:B2")
+            formulas = r.formulas
+            assert formulas == [[None, "=A1*2"], ["=A1+5", None]]
+
+    def test_range_values_write_with_formulas(self, tmp_path: Path):
+        """Test writing formulas via range.values."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            # Write mix of values and formulas
+            ctx.active.range("A1:C2").values = [
+                [10, 20, "=A1+B1"],
+                [30, 40, "=A2+B2"],
+            ]
+            ctx.workbook.save(path)
+
+        with ExcelContext(path) as ctx:
+            # Values are materialized (10, 20 are numbers)
+            assert ctx.active["A1"].value == 10
+            assert ctx.active["B2"].value == 40
+            # Formulas are preserved and accessible via .formulas
+            assert ctx.active.formulas == {"C1": "=A1+B1", "C2": "=A2+B2"}
+            # Range formulas also work
+            assert ctx.active.range("C1:C2").formulas == [["=A1+B1"], ["=A2+B2"]]
+
+    def test_range_invalid_reference(self, tmp_path: Path):
+        """Test that invalid range reference raises ValueError."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            with pytest.raises(ValueError, match="Invalid range reference"):
+                ctx.active.range("not_a_range")
+
+    def test_range_repr(self, tmp_path: Path):
+        """Test range repr."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            r = ctx.active.range("A1:B2")
+            assert "RangeProxy" in repr(r)
+            assert "A1:B2" in repr(r)
+
+
+class TestRangeApplyStyle:
+    """Tests for RangeProxy.apply_style()."""
+
     def test_apply_font_to_single_cell(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
         with ExcelContext(path, create=True) as ctx:
             ctx.active["A1"] = "Hello"
-            ctx.apply_style("Sheet", "A1", font=Font(bold=True, color="FF0000"))
+            ctx.active.range("A1").apply_style(font=Font(bold=True, color="FF0000"))
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
@@ -227,7 +335,7 @@ class TestApplyStyle:
         with ExcelContext(path, create=True) as ctx:
             for col in ["A", "B", "C"]:
                 ctx.active[f"{col}1"] = f"Value {col}"
-            ctx.apply_style("Sheet", "A1:C1", font=Font(italic=True))
+            ctx.active.range("A1:C1").apply_style(font=Font(italic=True))
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
@@ -241,7 +349,7 @@ class TestApplyStyle:
             fill = PatternFill(
                 start_color="FFFF00", end_color="FFFF00", fill_type="solid"
             )
-            ctx.apply_style("Sheet", "A1", fill=fill)
+            ctx.active.range("A1").apply_style(fill=fill)
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
@@ -252,13 +360,12 @@ class TestApplyStyle:
         with ExcelContext(path, create=True) as ctx:
             ctx.active["A1"] = "Gradient"
             gradient = GradientFill(stop=["FF0000", "0000FF"])
-            ctx.apply_style("Sheet", "A1", gradient_fill=gradient)
+            ctx.active.range("A1").apply_style(gradient_fill=gradient)
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
             cell = ctx.active["A1"]
-            # fill is wrapped in StyleProxy, so check type attribute
-            assert cell.fill.type == "linear"  # GradientFill type
+            assert cell.fill.type == "linear"
             assert len(cell.fill.stop) == 2
             assert cell.fill.stop[0].color.rgb == "00FF0000"
             assert cell.fill.stop[1].color.rgb == "000000FF"
@@ -269,7 +376,7 @@ class TestApplyStyle:
             for col in ["A", "B", "C"]:
                 ctx.active[f"{col}1"] = f"Gradient {col}"
             gradient = GradientFill(stop=["00FF00", "FFFF00"], degree=90)
-            ctx.apply_style("Sheet", "A1:C1", gradient_fill=gradient)
+            ctx.active.range("A1:C1").apply_style(gradient_fill=gradient)
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
@@ -286,13 +393,11 @@ class TestApplyStyle:
             ctx.active["A1"] = "Both fills"
             pattern = PatternFill(start_color="FF0000", fill_type="solid")
             gradient = GradientFill(stop=["00FF00", "0000FF"])
-            # Both specified - gradient should win
-            ctx.apply_style("Sheet", "A1", fill=pattern, gradient_fill=gradient)
+            ctx.active.range("A1").apply_style(fill=pattern, gradient_fill=gradient)
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
             cell = ctx.active["A1"]
-            # Should be gradient, not pattern
             assert cell.fill.type == "linear"
             assert len(cell.fill.stop) == 2
 
@@ -301,7 +406,7 @@ class TestApplyStyle:
         with ExcelContext(path, create=True) as ctx:
             ctx.active["A1"] = 1234.56
             ctx.active["A2"] = -789.12
-            ctx.apply_style("Sheet", "A1:A2", number_format="#,##0.00;(#,##0.00)")
+            ctx.active.range("A1:A2").apply_style(number_format="#,##0.00;(#,##0.00)")
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
@@ -312,8 +417,8 @@ class TestApplyStyle:
         path = tmp_path / "test.xlsx"
         with ExcelContext(path, create=True) as ctx:
             ctx.active["A1"] = "Centered"
-            ctx.apply_style(
-                "Sheet", "A1", alignment=Alignment(horizontal="center", vertical="top")
+            ctx.active.range("A1").apply_style(
+                alignment=Alignment(horizontal="center", vertical="top")
             )
             ctx.workbook.save(path)
 
@@ -329,7 +434,7 @@ class TestApplyStyle:
             border = Border(
                 left=thin_side, right=thin_side, top=thin_side, bottom=thin_side
             )
-            ctx.apply_style("Sheet", "A1", border=border)
+            ctx.active.range("A1").apply_style(border=border)
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
@@ -340,8 +445,8 @@ class TestApplyStyle:
         path = tmp_path / "test.xlsx"
         with ExcelContext(path, create=True) as ctx:
             ctx.active["A1"] = "Protected"
-            ctx.apply_style(
-                "Sheet", "A1", protection=Protection(locked=True, hidden=True)
+            ctx.active.range("A1").apply_style(
+                protection=Protection(locked=True, hidden=True)
             )
             ctx.workbook.save(path)
 
@@ -353,9 +458,7 @@ class TestApplyStyle:
         path = tmp_path / "test.xlsx"
         with ExcelContext(path, create=True) as ctx:
             ctx.active["B2"] = 42
-            ctx.apply_style(
-                "Sheet",
-                "B2",
+            ctx.active.range("B2").apply_style(
                 font=Font(bold=True),
                 fill=PatternFill(start_color="00FF00", fill_type="solid"),
                 number_format="0.00",
@@ -376,7 +479,7 @@ class TestApplyStyle:
             for row in range(1, 4):
                 for col in ["A", "B", "C"]:
                     ctx.active[f"{col}{row}"] = f"{col}{row}"
-            ctx.apply_style("Sheet", "A1:C3", font=Font(size=14))
+            ctx.active.range("A1:C3").apply_style(font=Font(size=14))
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:
@@ -384,80 +487,46 @@ class TestApplyStyle:
                 for col in ["A", "B", "C"]:
                     assert ctx.active[f"{col}{row}"].font.size == 14
 
-    def test_apply_style_sets_dirty_flag(self, tmp_path: Path):
-        path = tmp_path / "test.xlsx"
-        with ExcelContext(path, create=True) as ctx:
-            ctx.active["A1"] = "Test"
-            ctx.workbook.save(path)
-            ctx._dirty = False
-            ctx.apply_style("Sheet", "A1", font=Font(bold=True))
-            assert ctx._dirty is True
 
+class TestSheetFormulas:
+    """Tests for WorksheetProxy.formulas property."""
 
-class TestGetFormulas:
-    def test_get_formulas_single_sheet(self, tmp_path: Path):
+    def test_sheet_formulas(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
         with ExcelContext(path, create=True) as ctx:
             ctx.active["A1"] = 10
             ctx.active["A2"] = 20
             ctx.active["A3"] = "=A1+A2"
             ctx.active["B1"] = "=A1*2"
-            ctx.active["C1"] = "Static text"
-            ctx.workbook.save(path)
 
-        with ExcelContext(path) as ctx:
-            formulas = ctx.get_formulas("Sheet")
+            formulas = ctx.active.formulas
             assert formulas == {"A3": "=A1+A2", "B1": "=A1*2"}
 
-    def test_get_formulas_all_sheets(self, tmp_path: Path):
+    def test_sheet_formulas_empty(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
         with ExcelContext(path, create=True) as ctx:
-            ctx.active["A1"] = "=SUM(1,2)"
-            ctx.create_sheet("Data")
-            ctx.sheet("Data")["B2"] = "=AVERAGE(1,2,3)"
-            ctx.workbook.save(path)
-
-        with ExcelContext(path) as ctx:
-            formulas = ctx.get_formulas()
-            assert "Sheet!A1" in formulas
-            assert formulas["Sheet!A1"] == "=SUM(1,2)"
-            assert "Data!B2" in formulas
-            assert formulas["Data!B2"] == "=AVERAGE(1,2,3)"
-
-    def test_get_formulas_empty_sheet(self, tmp_path: Path):
-        path = tmp_path / "test.xlsx"
-        with ExcelContext(path, create=True) as ctx:
-            ctx.workbook.save(path)
-
-        with ExcelContext(path) as ctx:
-            formulas = ctx.get_formulas("Sheet")
+            formulas = ctx.active.formulas
             assert formulas == {}
 
-    def test_get_formulas_no_formulas(self, tmp_path: Path):
+    def test_sheet_formulas_no_formulas(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
         with ExcelContext(path, create=True) as ctx:
-            ctx.active["A1"] = "Hello"
-            ctx.active["A2"] = 123
-            ctx.workbook.save(path)
-
-        with ExcelContext(path) as ctx:
-            formulas = ctx.get_formulas("Sheet")
+            ctx.active["A1"] = 100
+            ctx.active["A2"] = "text"
+            formulas = ctx.active.formulas
             assert formulas == {}
 
-    def test_get_formulas_complex_formulas(self, tmp_path: Path):
+    def test_sheet_formulas_complex(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
         with ExcelContext(path, create=True) as ctx:
-            ctx.active["A1"] = "=IF(B1>0, B1*C1, 0)"
-            ctx.active["A2"] = "=VLOOKUP(D1, A1:C10, 2, FALSE)"
-            ctx.active["A3"] = '=CONCATENATE("Hello", " ", "World")'
-            ctx.workbook.save(path)
+            ctx.active["A1"] = "=SUM(B1:B10)"
+            ctx.active["A2"] = "=IF(A1>0,A1,-A1)"
+            ctx.active["A3"] = "=VLOOKUP(A1,B:C,2,FALSE)"
 
-        with ExcelContext(path) as ctx:
-            formulas = ctx.get_formulas("Sheet")
-            assert len(formulas) == 3
-            assert "IF" in formulas["A1"]
-            assert "VLOOKUP" in formulas["A2"]
-            assert "CONCATENATE" in formulas["A3"]
+            formulas = ctx.active.formulas
+            assert "A1" in formulas
+            assert "A2" in formulas
+            assert "A3" in formulas
 
 
 class TestExtractCellRefs:
@@ -569,7 +638,8 @@ class TestProxyValueUpdate:
 
             # After sync, same proxy should show calculated value
             assert ws["A3"].value == 300
-            assert ctx.read_value("Sheet1", "A3") == 300
+            # Read via range too
+            assert ctx.active.range("A3").values == [[300]]
 
     def test_proxy_identity_maintained_after_sync(self, tmp_path: Path):
         """Verify that worksheet proxy object identity is maintained after sync."""

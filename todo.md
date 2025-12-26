@@ -12,7 +12,7 @@
 
   - ps: it is. its just that we don't populate `_workbook_values` on enter of the context manager!
 
-# Ranges + setters via 2D arrays
+# Ranges + setters via 2D arrays [X]
 
 Helps w/ off by one errors via for-looping
 Perhaps can support styling as well (refactor `ctx.apply_style` to apply on range instead of globally to keep things consistent.)

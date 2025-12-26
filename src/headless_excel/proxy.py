@@ -2,11 +2,202 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from openpyxl.cell.cell import Cell
+from openpyxl.styles import (
+    Alignment,
+    Border,
+    Font,
+    GradientFill,
+    PatternFill,
+    Protection,
+)
+from openpyxl.utils import column_index_from_string
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
+
+# Pattern for parsing range references like "A1:B2" or "A1"
+RANGE_PATTERN = re.compile(r"^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$", re.IGNORECASE)
+
+
+def _parse_range(ref: str) -> tuple[int, int, int, int]:
+    """Parse range reference into (min_row, min_col, max_row, max_col).
+
+    Args:
+        ref: Range like "A1:B2" or single cell like "A1"
+
+    Returns:
+        Tuple of (min_row, min_col, max_row, max_col), 1-indexed
+
+    Raises:
+        ValueError: If ref is not a valid range format
+    """
+    match = RANGE_PATTERN.match(ref.upper())
+    if not match:
+        raise ValueError(f"Invalid range reference: {ref!r}")
+
+    start_col, start_row, end_col, end_row = match.groups()
+    min_col = column_index_from_string(start_col)
+    min_row = int(start_row)
+
+    if end_col and end_row:
+        max_col = column_index_from_string(end_col)
+        max_row = int(end_row)
+    else:
+        max_col = min_col
+        max_row = min_row
+
+    # Normalize so min <= max
+    if min_row > max_row:
+        min_row, max_row = max_row, min_row
+    if min_col > max_col:
+        min_col, max_col = max_col, min_col
+
+    return min_row, min_col, max_row, max_col
+
+
+class RangeProxy:
+    """Proxy for a cell range supporting bulk read/write operations.
+
+    Example:
+        r = sheet.range("A1:C3")
+        r.values = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+        r.apply_style(font=Font(bold=True))
+    """
+
+    def __init__(self, ws_proxy: WorksheetProxy, range_ref: str) -> None:
+        """Initialize range proxy.
+
+        Args:
+            ws_proxy: Parent WorksheetProxy
+            range_ref: Range reference like "A1:B2" or "A1"
+        """
+        self._ws = ws_proxy
+        self._range_ref = range_ref
+        self._min_row, self._min_col, self._max_row, self._max_col = _parse_range(
+            range_ref
+        )
+
+    @property
+    def num_rows(self) -> int:
+        """Number of rows in range."""
+        return self._max_row - self._min_row + 1
+
+    @property
+    def num_cols(self) -> int:
+        """Number of columns in range."""
+        return self._max_col - self._min_col + 1
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        """Shape as (rows, cols)."""
+        return (self.num_rows, self.num_cols)
+
+    @property
+    def values(self) -> list[list[Any]]:
+        """Get 2D array of values from the range."""
+        result = []
+        for row_idx in range(self._min_row, self._max_row + 1):
+            row_values = []
+            for col_idx in range(self._min_col, self._max_col + 1):
+                cell = self._ws.cell(row_idx, col_idx)
+                row_values.append(cell.value)
+            result.append(row_values)
+        return result
+
+    @values.setter
+    def values(self, data: list[list[Any]]) -> None:
+        """Set 2D array of values to the range.
+
+        Args:
+            data: 2D list matching range dimensions
+
+        Raises:
+            ValueError: If data dimensions don't match range dimensions
+        """
+        # Validate dimensions
+        if not isinstance(data, list):
+            raise ValueError("Data must be a 2D list")
+
+        if len(data) != self.num_rows:
+            raise ValueError(
+                f"Row count mismatch: got {len(data)}, expected {self.num_rows}"
+            )
+
+        for i, row in enumerate(data):
+            if not isinstance(row, list):
+                raise ValueError(f"Row {i} must be a list")
+            if len(row) != self.num_cols:
+                raise ValueError(
+                    f"Column count mismatch in row {i}: got {len(row)}, expected {self.num_cols}"
+                )
+
+        # Write values
+        for row_offset, row_data in enumerate(data):
+            for col_offset, value in enumerate(row_data):
+                row_idx = self._min_row + row_offset
+                col_idx = self._min_col + col_offset
+                self._ws._formula_ws.cell(row_idx, col_idx).value = value
+
+    @property
+    def formulas(self) -> list[list[str | None]]:
+        """Get 2D array of formulas (None for non-formula cells)."""
+        result = []
+        for row_idx in range(self._min_row, self._max_row + 1):
+            row_formulas = []
+            for col_idx in range(self._min_col, self._max_col + 1):
+                cell = self._ws._formula_ws.cell(row_idx, col_idx)
+                val = cell.value
+                if isinstance(val, str) and val.startswith("="):
+                    row_formulas.append(val)
+                else:
+                    row_formulas.append(None)
+            result.append(row_formulas)
+        return result
+
+    def apply_style(
+        self,
+        font: Font | None = None,
+        fill: PatternFill | None = None,
+        gradient_fill: GradientFill | None = None,
+        alignment: Alignment | None = None,
+        border: Border | None = None,
+        protection: Protection | None = None,
+        number_format: str | None = None,
+    ) -> None:
+        """Apply styles to all cells in the range.
+
+        Args:
+            font: Font style to apply
+            fill: Fill/background style (PatternFill)
+            gradient_fill: Gradient fill (takes precedence over fill)
+            alignment: Alignment style
+            border: Border style
+            protection: Protection settings
+            number_format: Number format string
+        """
+        for row_idx in range(self._min_row, self._max_row + 1):
+            for col_idx in range(self._min_col, self._max_col + 1):
+                cell = self._ws._formula_ws.cell(row_idx, col_idx)
+                if font is not None:
+                    cell.font = font
+                if gradient_fill is not None:
+                    cell.fill = gradient_fill
+                elif fill is not None:
+                    cell.fill = fill
+                if alignment is not None:
+                    cell.alignment = alignment
+                if border is not None:
+                    cell.border = border
+                if protection is not None:
+                    cell.protection = protection
+                if number_format is not None:
+                    cell.number_format = number_format
+
+    def __repr__(self) -> str:
+        return f"<RangeProxy '{self._ws._formula_ws.title}'!{self._range_ref}>"
 
 
 class CellProxy:
@@ -175,6 +366,41 @@ class WorksheetProxy:
         else:
             for f_col in formula_cols:
                 yield tuple(CellProxy(cell, None) for cell in f_col)
+
+    def range(self, ref: str) -> RangeProxy:
+        """Get a range for bulk read/write operations.
+
+        Args:
+            ref: Range reference like "A1:C3" or single cell "A1"
+
+        Returns:
+            RangeProxy for bulk operations
+
+        Example:
+            r = sheet.range("A1:C3")
+            r.values = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+            r.apply_style(font=Font(bold=True))
+        """
+        return RangeProxy(self, ref)
+
+    @property
+    def formulas(self) -> dict[str, str]:
+        """Get all formulas in this sheet as {coordinate: formula}.
+
+        Example:
+            >>> sheet.formulas
+            {'A1': '=B1+C1', 'D5': '=SUM(A1:A4)'}
+        """
+        result: dict[str, str] = {}
+        for row in self._formula_ws.iter_rows():
+            for cell in row:
+                if (
+                    cell.value is not None
+                    and isinstance(cell.value, str)
+                    and cell.value.startswith("=")
+                ):
+                    result[cell.coordinate] = cell.value
+        return result
 
     # Forward all other attributes to formula worksheet
     def __getattr__(self, name: str) -> Any:
