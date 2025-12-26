@@ -148,6 +148,20 @@ with create("model.xlsx") as ctx:
 
     # Get all formulas in sheet
     ws.formulas  # {"A1": "=B1+C1", ...}
+
+    # Get formula from individual cell
+    ws["A1"].formula  # "=B1+C1"
+    ws["B1"].formula  # None (not a formula)
+
+    # Debug: dump range contents as formatted table
+    ws.range("A1:C3").dump()
+    # |   A |   B |       C |
+    # |-----|-----|---------|
+    # |  10 |  20 |      30 |
+    # |  30 |  40 |      70 |
+    # |  50 |  60 |     100 |
+
+    ws.range("A1:C3").dump(show_formulas=True)  # Show formulas instead of values
 ```
 
 #### Range Styling

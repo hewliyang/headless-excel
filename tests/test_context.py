@@ -924,3 +924,105 @@ class TestSheetManagement:
 
             # Should be removed from cache
             assert "Data" not in ctx._proxy._sheet_cache
+
+
+class TestCellFormula:
+    """Tests for CellProxy.formula property."""
+
+    def test_formula_returns_formula_string(self, tmp_path: Path):
+        """Test that .formula returns formula string for formula cells."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = "=SUM(B1:B10)"
+            ws["A2"] = "=A1*2"
+
+            assert ws["A1"].formula == "=SUM(B1:B10)"
+            assert ws["A2"].formula == "=A1*2"
+
+    def test_formula_returns_none_for_values(self, tmp_path: Path):
+        """Test that .formula returns None for non-formula cells."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = 42
+            ws["A2"] = "hello"
+            ws["A3"] = 3.14
+
+            assert ws["A1"].formula is None
+            assert ws["A2"].formula is None
+            assert ws["A3"].formula is None
+
+    def test_formula_returns_none_for_empty(self, tmp_path: Path):
+        """Test that .formula returns None for empty cells."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            assert ws["A1"].formula is None
+
+
+class TestRangeDump:
+    """Tests for RangeProxy.dump() method."""
+
+    def test_dump_returns_formatted_string(self, tmp_path: Path):
+        """Test that dump() returns a formatted table string."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws.range("A1:C3").values = [
+                [1, 2, 3],
+                [4, 5, 6],
+                [7, 8, 9],
+            ]
+
+            result = ws.range("A1:C3").dump()
+
+            assert isinstance(result, str)
+            assert "A" in result
+            assert "B" in result
+            assert "C" in result
+            assert "1" in result
+            assert "9" in result
+
+    def test_dump_shows_formulas(self, tmp_path: Path):
+        """Test that dump(show_formulas=True) shows formula strings."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = 10
+            ws["B1"] = "=A1*2"
+
+            result = ws.range("A1:B1").dump(show_formulas=True)
+
+            assert "=A1*2" in result
+
+    def test_dump_handles_none_values(self, tmp_path: Path):
+        """Test that dump() handles empty cells gracefully."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = 1
+            # B1 is empty
+
+            result = ws.range("A1:B1").dump()
+
+            assert isinstance(result, str)
+            assert "1" in result
+
+    def test_dump_truncates_long_values(self, tmp_path: Path):
+        """Test that dump() truncates very long cell values."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = "This is a very long string that should be truncated"
+
+            result = ws.range("A1:A1").dump()
+
+            assert "…" in result  # Truncation indicator

@@ -176,6 +176,82 @@ class RangeProxy:
                     result[cell.coordinate] = val
         return result
 
+    def dump(self, show_formulas: bool = False) -> str:
+        """Print range contents as formatted table for debugging.
+
+        Args:
+            show_formulas: If True, show formulas instead of values
+
+        Returns:
+            Formatted string representation of the range
+
+        Example:
+            >>> print(ws.range("A1:C3").dump())
+            |     A |     B |     C |
+            |-------|-------|-------|
+            |   100 |   200 |   300 |
+            |    10 |    20 |    30 |
+            |     1 |     2 |     3 |
+        """
+        from openpyxl.utils import get_column_letter
+
+        # Collect data
+        if show_formulas:
+            data = []
+            for row_idx in range(self._min_row, self._max_row + 1):
+                row_data = []
+                for col_idx in range(self._min_col, self._max_col + 1):
+                    cell = self._ws._formula_ws.cell(row_idx, col_idx)
+                    row_data.append(cell.value)
+                data.append(row_data)
+        else:
+            data = self.values
+
+        # Calculate column widths
+        col_letters = [
+            get_column_letter(c) for c in range(self._min_col, self._max_col + 1)
+        ]
+        col_widths = [len(letter) for letter in col_letters]
+
+        for row in data:
+            for i, val in enumerate(row):
+                str_val = "" if val is None else str(val)
+                col_widths[i] = max(col_widths[i], len(str_val))
+
+        # Cap column width at 20 for readability
+        col_widths = [min(w, 20) for w in col_widths]
+
+        # Build output
+        lines = []
+
+        # Header row with column letters
+        header = "|" + "|".join(f" {col_letters[i]:>{col_widths[i]}} " for i in range(len(col_letters))) + "|"
+        lines.append(header)
+
+        # Separator
+        sep = "|" + "|".join("-" * (col_widths[i] + 2) for i in range(len(col_widths))) + "|"
+        lines.append(sep)
+
+        # Data rows
+        for row in data:
+            row_strs = []
+            for i, val in enumerate(row):
+                if val is None:
+                    str_val = ""
+                elif isinstance(val, float):
+                    str_val = f"{val:.4g}"
+                else:
+                    str_val = str(val)
+                # Truncate if too long
+                if len(str_val) > col_widths[i]:
+                    str_val = str_val[: col_widths[i] - 1] + "…"
+                row_strs.append(f" {str_val:>{col_widths[i]}} ")
+            lines.append("|" + "|".join(row_strs) + "|")
+
+        result = "\n".join(lines)
+        print(result)
+        return result
+
     def apply_style(
         self,
         font: Font | None = None,
@@ -257,6 +333,23 @@ class CellProxy:
         if self._on_write:
             self._on_write()
         self._formula_cell.value = val
+
+    @property
+    def formula(self) -> str | None:
+        """Get formula string if cell contains a formula, otherwise None.
+
+        Example:
+            >>> ws['A1'] = '=SUM(B1:B10)'
+            >>> ws['A1'].formula
+            '=SUM(B1:B10)'
+            >>> ws['A2'] = 42
+            >>> ws['A2'].formula
+            None
+        """
+        val = self._formula_cell.value
+        if isinstance(val, str) and val.startswith("="):
+            return val
+        return None
 
     # Forward all other attributes to formula cell
     def __getattr__(self, name: str) -> Any:
