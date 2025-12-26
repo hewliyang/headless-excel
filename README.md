@@ -127,9 +127,9 @@ with run("model.xlsx", create=True) as ctx:
     r.num_rows   # 4
     r.num_cols   # 4
 
-    # Read formulas (None for non-formula cells)
+    # Get formulas in range (dict, only formula cells)
     ws["A1"] = "=B1+C1"
-    ws.range("A1:B1").formulas  # [["=B1+C1", None]]
+    ws.range("A1:B1").formulas  # {"A1": "=B1+C1"}
 
     # Get all formulas in sheet
     ws.formulas  # {"A1": "=B1+C1", ...}

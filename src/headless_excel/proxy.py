@@ -142,19 +142,23 @@ class RangeProxy:
                 self._ws._formula_ws.cell(row_idx, col_idx).value = value
 
     @property
-    def formulas(self) -> list[list[str | None]]:
-        """Get 2D array of formulas (None for non-formula cells)."""
-        result = []
+    def formulas(self) -> dict[str, str]:
+        """Get formulas in range as {coordinate: formula}.
+
+        Only cells containing formulas are included.
+        More token-efficient than a 2D array for sparse formulas.
+
+        Example:
+            >>> ws.range("A1:C3").formulas
+            {'B2': '=A1*2', 'C3': '=SUM(A1:B2)'}
+        """
+        result: dict[str, str] = {}
         for row_idx in range(self._min_row, self._max_row + 1):
-            row_formulas = []
             for col_idx in range(self._min_col, self._max_col + 1):
                 cell = self._ws._formula_ws.cell(row_idx, col_idx)
                 val = cell.value
                 if isinstance(val, str) and val.startswith("="):
-                    row_formulas.append(val)
-                else:
-                    row_formulas.append(None)
-            result.append(row_formulas)
+                    result[cell.coordinate] = val
         return result
 
     def apply_style(
@@ -489,8 +493,11 @@ class WorkbookProxy:
     ) -> WorksheetProxy:
         """Create a new worksheet."""
         formula_ws = self._formula_wb.create_sheet(title, index)
-        # New sheets don't have values yet
-        return WorksheetProxy(formula_ws, None)
+        # New sheets don't have values yet, but cache so sync() updates them
+        proxy = WorksheetProxy(formula_ws, None)
+        if formula_ws.title:
+            self._sheet_cache[formula_ws.title] = proxy
+        return proxy
 
     @property
     def worksheets(self) -> list[WorksheetProxy]:

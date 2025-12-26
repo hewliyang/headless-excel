@@ -277,7 +277,8 @@ class TestRangeProxy:
 
             r = ctx.active.range("A1:B2")
             formulas = r.formulas
-            assert formulas == [[None, "=A1*2"], ["=A1+5", None]]
+            # Returns dict, not 2D array (more token-efficient for sparse formulas)
+            assert formulas == {"B1": "=A1*2", "A2": "=A1+5"}
 
     def test_range_values_write_with_formulas(self, tmp_path: Path):
         """Test writing formulas via range.values."""
@@ -296,8 +297,8 @@ class TestRangeProxy:
             assert ctx.active["B2"].value == 40
             # Formulas are preserved and accessible via .formulas
             assert ctx.active.formulas == {"C1": "=A1+B1", "C2": "=A2+B2"}
-            # Range formulas also work
-            assert ctx.active.range("C1:C2").formulas == [["=A1+B1"], ["=A2+B2"]]
+            # Range formulas returns dict (same format as sheet.formulas)
+            assert ctx.active.range("C1:C2").formulas == {"C1": "=A1+B1", "C2": "=A2+B2"}
 
     def test_range_invalid_reference(self, tmp_path: Path):
         """Test that invalid range reference raises ValueError."""
@@ -624,8 +625,8 @@ class TestProxyValueUpdate:
         """Verify that worksheet proxy returns calculated values after sync."""
         path = tmp_path / "test.xlsx"
         with run(path, create=True, auto_sync=False) as ctx:
+            # Use the proxy returned by create_sheet directly (don't reassign to ctx.active)
             ws = ctx.create_sheet("Sheet1", 0)
-            ws = ctx.active
 
             ws["A1"] = 100
             ws["A2"] = 200
@@ -639,7 +640,7 @@ class TestProxyValueUpdate:
             # After sync, same proxy should show calculated value
             assert ws["A3"].value == 300
             # Read via range too
-            assert ctx.active.range("A3").values == [[300]]
+            assert ws.range("A3").values == [[300]]
 
     def test_proxy_identity_maintained_after_sync(self, tmp_path: Path):
         """Verify that worksheet proxy object identity is maintained after sync."""
@@ -656,6 +657,25 @@ class TestProxyValueUpdate:
             assert ws_before is ws_after
             # And should show calculated value
             assert ws_after["A1"].value == 30
+
+    def test_create_sheet_proxy_updates_after_sync(self, tmp_path: Path):
+        """Verify that proxy from create_sheet gets updated after sync."""
+        path = tmp_path / "test.xlsx"
+        with run(path, create=True, auto_sync=False) as ctx:
+            # Keep reference to proxy returned by create_sheet
+            ws = ctx.create_sheet("Data", 0)
+
+            # Use range API to set values including formula
+            ws.range("A1:A3").values = [[100], [200], ["=A1+A2"]]
+
+            # Before sync, formula is just a string
+            assert ws["A3"].value == "=A1+A2"
+
+            ctx.sync()
+
+            # After sync, should show calculated value
+            assert ws["A3"].value == 300
+            assert ws.range("A3").values == [[300]]
 
 
 class TestBuildErrorDetails:
