@@ -44,9 +44,9 @@ with run("model.xlsx") as ctx:
 
 ## API
 
-### `create(path, overwrite=False, auto_sync=True, raise_on_errors=True)`
+### `create(path, overwrite=False, auto_sync=True, raise_on_errors=True, lint_financial_colors=True)`
 
-Create a new Excel file.
+Create a new Excel file. By default, lints financial color conventions on exit.
 
 ```python
 from headless_excel import create
@@ -61,9 +61,9 @@ with create("existing.xlsx", overwrite=True) as ctx:
     ctx.active["A1"] = "Fresh start"
 ```
 
-### `run(path, auto_sync=True, raise_on_errors=True)`
+### `run(path, auto_sync=True, raise_on_errors=True, lint_financial_colors=True)`
 
-Open an existing Excel file. Similar to OfficeJS `Excel.run()`.
+Open an existing Excel file. Similar to OfficeJS `Excel.run()`. By default, lints financial color conventions on exit.
 
 ```python
 from headless_excel import run
@@ -252,7 +252,8 @@ infer_financial_color("=A1+B1")      # Colors.FORMULA (black)
 infer_financial_color("=Sheet2!A1")  # Colors.EXTERNAL_LINK (green)
 
 # Auto-apply colors based on cell content
-with create("model.xlsx") as ctx:
+# Note: lint_financial_colors=False to avoid auto-lint on exit for this example
+with create("model.xlsx", lint_financial_colors=False) as ctx:
     ws = ctx.active
     ws["A1"] = 100
     ws["A2"] = "=A1*2"
@@ -267,8 +268,8 @@ with create("model.xlsx") as ctx:
     # Or apply to entire workbook
     ctx.auto_financial_colors()
 
-# Lint: check for color violations
-with run("model.xlsx") as ctx:
+# Lint: check for color violations (enabled by default)
+with run("model.xlsx", lint_financial_colors=False) as ctx:
     # Check specific range
     violations = ctx.active.range("A1:D10").lint_financial_colors()
 
@@ -281,12 +282,11 @@ with run("model.xlsx") as ctx:
     # Raise on violations
     ctx.lint_financial_colors(raise_on_violations=True)
 
-# Enforce via context parameter (useful for CI)
-with create("model.xlsx", lint_financial_colors=True) as ctx:
+# Financial color linting is enabled by default
+# To disable it:
+with create("model.xlsx", lint_financial_colors=False) as ctx:
     ws = ctx.active
-    ws["A1"] = 100
-    ws["A1"].font = Font(color=Colors.HARDCODE)  # Must color correctly!
-    # Raises ColorLintError on exit if colors don't match conventions
+    ws["A1"] = 100  # No color check on exit
 ```
 
 ### Exceptions

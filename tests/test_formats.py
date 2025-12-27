@@ -44,36 +44,36 @@ class TestNumberFormats:
     def test_apply_accounting_format(self, tmp_path: Path):
         """NumberFormats.ACCOUNTING should work with cells."""
         path = tmp_path / "test.xlsx"
-        with create(path, auto_sync=False) as ctx:
+        with create(path, auto_sync=False, lint_financial_colors=False) as ctx:
             ctx.active["A1"] = 1234.56
             ctx.active["A1"].number_format = NumberFormats.ACCOUNTING  # type: ignore[union-attr]
             ctx.workbook.save(path)
 
-        with run(path, auto_sync=False) as ctx:
+        with run(path, auto_sync=False, lint_financial_colors=False) as ctx:
             assert ctx.active["A1"].number_format == NumberFormats.ACCOUNTING  # type: ignore[union-attr]
             assert ctx.active["A1"].value == 1234.56  # type: ignore[union-attr]
 
     def test_apply_percentage_format(self, tmp_path: Path):
         """NumberFormats.PERCENTAGE should work with cells."""
         path = tmp_path / "test.xlsx"
-        with create(path, auto_sync=False) as ctx:
+        with create(path, auto_sync=False, lint_financial_colors=False) as ctx:
             ctx.active["A1"] = 0.1575
             ctx.active["A1"].number_format = NumberFormats.PERCENTAGE_2DP  # type: ignore[union-attr]
             ctx.workbook.save(path)
 
-        with run(path, auto_sync=False) as ctx:
+        with run(path, auto_sync=False, lint_financial_colors=False) as ctx:
             assert ctx.active["A1"].number_format == NumberFormats.PERCENTAGE_2DP  # type: ignore[union-attr]
 
     def test_apply_style_with_format(self, tmp_path: Path):
         """NumberFormats should work with range.apply_style()."""
         path = tmp_path / "test.xlsx"
-        with create(path, auto_sync=False) as ctx:
+        with create(path, auto_sync=False, lint_financial_colors=False) as ctx:
             ctx.active["A1"] = 100
             ctx.active["A2"] = 200
             ctx.active.range("A1:A2").apply_style(number_format=NumberFormats.NUMBER)
             ctx.workbook.save(path)
 
-        with run(path, auto_sync=False) as ctx:
+        with run(path, auto_sync=False, lint_financial_colors=False) as ctx:
             assert ctx.active["A1"].number_format == NumberFormats.NUMBER  # type: ignore[union-attr]
             assert ctx.active["A2"].number_format == NumberFormats.NUMBER  # type: ignore[union-attr]
 
@@ -120,14 +120,19 @@ class TestInferFinancialColor:
         assert infer_financial_color(3.14) == Colors.HARDCODE
         assert infer_financial_color(0) == Colors.HARDCODE
 
-    def test_hardcode_string(self):
-        """Non-formula strings should be HARDCODE (blue)."""
-        assert infer_financial_color("Hello") == Colors.HARDCODE
-        assert infer_financial_color("Revenue") == Colors.HARDCODE
+    def test_text_labels_not_colored(self):
+        """Non-formula strings (text labels) should return None (no color change)."""
+        assert infer_financial_color("Hello") is None
+        assert infer_financial_color("Revenue") is None
 
-    def test_hardcode_none(self):
-        """None should be HARDCODE (blue)."""
-        assert infer_financial_color(None) == Colors.HARDCODE
+    def test_none_not_colored(self):
+        """None should return None (no color change)."""
+        assert infer_financial_color(None) is None
+
+    def test_bool_not_colored(self):
+        """Booleans should return None (no color change)."""
+        assert infer_financial_color(True) is None
+        assert infer_financial_color(False) is None
 
     def test_formula_simple(self):
         """Simple formulas without sheet refs should be FORMULA (black)."""
@@ -159,16 +164,17 @@ class TestAutoFinancialColors:
         path = tmp_path / "test.xlsx"
         with create(path, auto_sync=False) as ctx:
             ws = ctx.active
-            ws["A1"] = 100  # Hardcode
+            ws["A1"] = 100  # Hardcode (numeric)
             ws["A2"] = "=A1*2"  # Formula
-            ws["B1"] = "Label"  # Hardcode
+            ws["B1"] = "Label"  # Text label (not colored)
             ws.range("A1:B2").auto_financial_colors()
             ctx.workbook.save(path)
 
         with run(path, auto_sync=False) as ctx:
             assert ctx.active["A1"].font.color.rgb == Colors.HARDCODE  # type: ignore[union-attr]
             assert ctx.active["A2"].font.color.rgb == Colors.FORMULA  # type: ignore[union-attr]
-            assert ctx.active["B1"].font.color.rgb == Colors.HARDCODE  # type: ignore[union-attr]
+            # Text labels are not colored - they keep their default theme color
+            assert ctx.active["B1"].font.color.type == "theme"  # type: ignore[union-attr]
 
     def test_sheet_auto_financial_colors(self, tmp_path: Path):
         """Sheet.auto_financial_colors should apply to entire sheet."""
@@ -238,7 +244,7 @@ class TestLintFinancialColors:
     def test_range_lint_with_violations(self, tmp_path: Path):
         """Range with wrong colors should report violations."""
         path = tmp_path / "test.xlsx"
-        with create(path, auto_sync=False) as ctx:
+        with create(path, auto_sync=False, lint_financial_colors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 100  # Should be blue, but no color set
             ws["A2"] = "=A1*2"
@@ -262,7 +268,7 @@ class TestLintFinancialColors:
     def test_context_lint_all_sheets(self, tmp_path: Path):
         """ctx.lint_financial_colors should check all sheets."""
         path = tmp_path / "test.xlsx"
-        with create(path, auto_sync=False) as ctx:
+        with create(path, auto_sync=False, lint_financial_colors=False) as ctx:
             sheet1 = ctx.create_sheet("Data")
             sheet1["A1"] = 100  # Violation: no color
 
@@ -278,7 +284,7 @@ class TestLintFinancialColors:
     def test_context_lint_raise_on_violations(self, tmp_path: Path):
         """ctx.lint_financial_colors should raise when requested."""
         path = tmp_path / "test.xlsx"
-        with create(path, auto_sync=False) as ctx:
+        with create(path, auto_sync=False, lint_financial_colors=False) as ctx:
             ctx.active["A1"] = 100  # Violation
 
             try:

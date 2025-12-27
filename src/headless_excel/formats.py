@@ -48,19 +48,20 @@ class Colors:
     EXTERNAL_LINK = "FF008000"  # Green - links to external sources
 
 
-def infer_financial_color(value: Any) -> str:
+def infer_financial_color(value: Any) -> str | None:
     """Infer the conventional financial modeling color for a cell value.
 
     Financial modeling conventions:
-    - Blue (HARDCODE): Literal/input values (numbers, strings, etc.)
+    - Blue (HARDCODE): Numeric input values (int, float)
     - Black (FORMULA): Formulas that don't reference other sheets
     - Green (EXTERNAL_LINK): Formulas that reference other sheets (contain '!')
+    - None: Text labels/strings (no color change, left as-is)
 
     Args:
         value: The cell value (formula string, number, etc.)
 
     Returns:
-        Color code from Colors class
+        Color code from Colors class, or None for text labels
 
     Example:
         >>> infer_financial_color(100)
@@ -69,6 +70,8 @@ def infer_financial_color(value: Any) -> str:
         'FF000000'  # Black - formula
         >>> infer_financial_color("=Sheet2!A1")
         'FF008000'  # Green - external link
+        >>> infer_financial_color("Revenue")
+        None  # Text labels are not colored
     """
     if isinstance(value, str) and value.startswith("="):
         # It's a formula - check if it references another sheet
@@ -79,7 +82,10 @@ def infer_financial_color(value: Any) -> str:
         if "!" in formula_without_strings:
             return Colors.EXTERNAL_LINK
         return Colors.FORMULA
-    return Colors.HARDCODE
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return Colors.HARDCODE
+    # Text labels and other values are not colored
+    return None
 
 
 def _remove_string_literals(formula: str) -> str:

@@ -312,9 +312,10 @@ class RangeProxy:
         """Apply conventional financial modeling colors based on cell content.
 
         Automatically sets font colors according to financial modeling conventions:
-        - Blue (HARDCODE): Literal/input values
+        - Blue (HARDCODE): Numeric input values
         - Black (FORMULA): Formulas without sheet references
         - Green (EXTERNAL_LINK): Formulas with sheet references (contain '!')
+        - Text labels/strings are left unchanged
 
         Example:
             ws.range("A1:D10").auto_financial_colors()
@@ -328,6 +329,9 @@ class RangeProxy:
                 cell = self._ws._formula_ws.cell(row_idx, col_idx)
                 if cell.value is not None:
                     color = infer_financial_color(cell.value)
+                    # Skip cells that don't need coloring (e.g., text labels)
+                    if color is None:
+                        continue
                     # Preserve existing font properties, just change color
                     old_font = cell.font
                     cell.font = Font(
@@ -344,9 +348,10 @@ class RangeProxy:
         """Check cells for financial color convention violations.
 
         Returns a list of ColorLintViolation for cells that don't follow conventions:
-        - Blue (HARDCODE): Literal/input values
+        - Blue (HARDCODE): Numeric input values
         - Black (FORMULA): Formulas without sheet references
         - Green (EXTERNAL_LINK): Formulas with sheet references
+        - Text labels/strings are not checked
 
         Returns:
             List of ColorLintViolation objects for cells with wrong colors
@@ -363,6 +368,9 @@ class RangeProxy:
                 cell = self._ws._formula_ws.cell(row_idx, col_idx)
                 if cell.value is not None:
                     expected = infer_financial_color(cell.value)
+                    # Skip cells that don't need coloring (e.g., text labels)
+                    if expected is None:
+                        continue
                     current = None
                     if cell.font and cell.font.color:
                         # Get color as RGB string
@@ -643,6 +651,9 @@ class WorksheetProxy:
             for cell in row:
                 if cell.value is not None:
                     color = infer_financial_color(cell.value)
+                    # Skip cells that don't need coloring (e.g., text labels)
+                    if color is None:
+                        continue
                     old_font = cell.font
                     cell.font = Font(
                         name=old_font.name,
@@ -668,6 +679,9 @@ class WorksheetProxy:
             for cell in row:
                 if cell.value is not None:
                     expected = infer_financial_color(cell.value)
+                    # Skip cells that don't need coloring (e.g., text labels)
+                    if expected is None:
+                        continue
                     current = None
                     if cell.font and cell.font.color:
                         color = cell.font.color

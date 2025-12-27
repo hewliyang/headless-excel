@@ -528,7 +528,7 @@ def run(
     auto_sync: bool = True,
     raise_on_errors: bool = True,
     recalc_timeout: int = 30,
-    lint_financial_colors: bool = False,
+    lint_financial_colors: bool = True,
 ) -> Generator[ExcelContext, None, None]:
     """Open an existing Excel file for operations.
 
@@ -539,7 +539,7 @@ def run(
         with run("model.xlsx") as ctx:
             ctx.active["A1"] = 100
             ctx.active["A2"] = "=A1*2"
-            # auto-syncs on exit
+            # auto-syncs on exit, lints financial colors by default
 
         # Or with explicit sync:
         with run("model.xlsx", auto_sync=False) as ctx:
@@ -547,10 +547,9 @@ def run(
             ctx.sync()  # manual sync
             print(ctx.values.active["A1"].value)
 
-        # Enforce financial color conventions:
-        with run("model.xlsx", lint_financial_colors=True) as ctx:
-            ctx.active["A1"] = 100  # Must be colored blue (HARDCODE)
-            # Raises ColorLintError on exit if colors don't match
+        # Disable financial color linting:
+        with run("model.xlsx", lint_financial_colors=False) as ctx:
+            ctx.active["A1"] = 100  # No color check on exit
 
     Args:
         path: Path to existing Excel file
@@ -558,7 +557,7 @@ def run(
         raise_on_errors: If True, raise FormulaError on sync errors
             else, raises SystemExit with error message to suppress traceback
         recalc_timeout: Timeout in seconds for LibreOffice recalculation
-        lint_financial_colors: If True, check color conventions on exit
+        lint_financial_colors: If True (default), check color conventions on exit
 
     Yields:
         ExcelContext for operations
@@ -579,24 +578,22 @@ def create(
     auto_sync: bool = True,
     raise_on_errors: bool = True,
     recalc_timeout: int = 30,
-    lint_financial_colors: bool = False,
+    lint_financial_colors: bool = True,
 ) -> Generator[ExcelContext, None, None]:
     """Create a new Excel file.
 
     Example:
         with create("new.xlsx") as ctx:
             ctx.active["A1"] = "Hello"
-            # auto-syncs on exit
+            # auto-syncs on exit, lints financial colors by default
 
         # Overwrite existing file:
         with create("existing.xlsx", overwrite=True) as ctx:
             ctx.active["A1"] = "Fresh start"
 
-        # Enforce financial color conventions:
-        with create("model.xlsx", lint_financial_colors=True) as ctx:
-            ctx.active["A1"] = 100
-            ctx.active["A1"].font = Font(color=Colors.HARDCODE)  # Blue
-            # Raises ColorLintError on exit if colors don't match
+        # Disable financial color linting:
+        with create("model.xlsx", lint_financial_colors=False) as ctx:
+            ctx.active["A1"] = 100  # No color check on exit
 
     Args:
         path: Path for the new Excel file
@@ -605,7 +602,7 @@ def create(
         raise_on_errors: If True, raise FormulaError on sync errors
             else, raises SystemExit with error message to suppress traceback
         recalc_timeout: Timeout in seconds for LibreOffice recalculation
-        lint_financial_colors: If True, check color conventions on exit
+        lint_financial_colors: If True (default), check color conventions on exit
 
     Yields:
         ExcelContext for operations
