@@ -69,3 +69,67 @@ def _format_value(v: Any) -> str:
             return repr(v[:17] + "...")
         return repr(v)
     return str(v)
+
+
+@dataclass
+class ColorLintViolation:
+    """Details about a single color lint violation.
+
+    Attributes:
+        cell: Cell coordinate (e.g., 'A1')
+        value: The cell's value
+        expected_color: The color that should be applied based on conventions
+        current_color: The color currently applied (None if no color set)
+    """
+
+    cell: str
+    value: Any
+    expected_color: str
+    current_color: str | None
+
+
+@dataclass
+class ColorLintError(ExcelError):
+    """Financial color conventions violated.
+
+    Raised when cells don't follow standard financial modeling color conventions:
+    - Blue: Hardcoded input values
+    - Black: Formulas
+    - Green: External/cross-sheet links
+
+    Attributes:
+        violations: Dict mapping sheet names to list of violations
+        total: Total number of violations
+    """
+
+    violations: dict[str, list[ColorLintViolation]] = field(default_factory=dict)
+    total: int = 0
+
+    def __str__(self) -> str:
+        if not self.violations:
+            return "No color lint violations"
+
+        lines = [f"Financial color violations ({self.total}):"]
+        for sheet_name, sheet_violations in self.violations.items():
+            for v in sheet_violations:
+                expected = _color_name(v.expected_color)
+                current = _color_name(v.current_color) if v.current_color else "none"
+                val_str = _format_value(v.value)
+                lines.append(
+                    f"  {sheet_name}!{v.cell}: expected {expected}, got {current} (value={val_str})"
+                )
+        return "\n".join(lines)
+
+
+def _color_name(color_code: str | None) -> str:
+    """Convert color code to human-readable name."""
+    from headless_excel.formats import Colors
+
+    if color_code is None:
+        return "none"
+    color_map = {
+        Colors.HARDCODE: "HARDCODE (blue)",
+        Colors.FORMULA: "FORMULA (black)",
+        Colors.EXTERNAL_LINK: "EXTERNAL_LINK (green)",
+    }
+    return color_map.get(color_code, color_code)

@@ -19,6 +19,9 @@ from openpyxl.utils import column_index_from_string
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
+from headless_excel.errors import ColorLintViolation
+from headless_excel.formats import infer_financial_color
+
 # Type alias for write callback
 OnWriteCallback = Callable[[], None] | None
 
@@ -305,6 +308,82 @@ class RangeProxy:
                 if number_format is not None:
                     cell.number_format = number_format
 
+    def auto_financial_colors(self) -> None:
+        """Apply conventional financial modeling colors based on cell content.
+
+        Automatically sets font colors according to financial modeling conventions:
+        - Blue (HARDCODE): Literal/input values
+        - Black (FORMULA): Formulas without sheet references
+        - Green (EXTERNAL_LINK): Formulas with sheet references (contain '!')
+
+        Example:
+            ws.range("A1:D10").auto_financial_colors()
+        """
+
+        if self._on_write:
+            self._on_write()
+
+        for row_idx in range(self._min_row, self._max_row + 1):
+            for col_idx in range(self._min_col, self._max_col + 1):
+                cell = self._ws._formula_ws.cell(row_idx, col_idx)
+                if cell.value is not None:
+                    color = infer_financial_color(cell.value)
+                    # Preserve existing font properties, just change color
+                    old_font = cell.font
+                    cell.font = Font(
+                        name=old_font.name,
+                        size=old_font.size,
+                        bold=old_font.bold,
+                        italic=old_font.italic,
+                        underline=old_font.underline,
+                        strike=old_font.strike,
+                        color=color,
+                    )
+
+    def lint_financial_colors(self) -> list:
+        """Check cells for financial color convention violations.
+
+        Returns a list of ColorLintViolation for cells that don't follow conventions:
+        - Blue (HARDCODE): Literal/input values
+        - Black (FORMULA): Formulas without sheet references
+        - Green (EXTERNAL_LINK): Formulas with sheet references
+
+        Returns:
+            List of ColorLintViolation objects for cells with wrong colors
+
+        Example:
+            violations = ws.range("A1:D10").lint_financial_colors()
+            for v in violations:
+                print(f"{v.cell}: expected {v.expected_color}, got {v.current_color}")
+        """
+
+        violations = []
+        for row_idx in range(self._min_row, self._max_row + 1):
+            for col_idx in range(self._min_col, self._max_col + 1):
+                cell = self._ws._formula_ws.cell(row_idx, col_idx)
+                if cell.value is not None:
+                    expected = infer_financial_color(cell.value)
+                    current = None
+                    if cell.font and cell.font.color:
+                        # Get color as RGB string
+                        color = cell.font.color
+                        if color.type == "rgb" and color.rgb:
+                            current = color.rgb
+                        elif color.type == "theme":
+                            # Theme colors are harder to resolve, treat as set
+                            current = f"theme:{color.theme}"
+
+                    if current != expected:
+                        violations.append(
+                            ColorLintViolation(
+                                cell=cell.coordinate,
+                                value=cell.value,
+                                expected_color=expected,
+                                current_color=current,
+                            )
+                        )
+        return violations
+
     def __repr__(self) -> str:
         return f"<RangeProxy '{self._ws._formula_ws.title}'!{self._range_ref}>"
 
@@ -550,6 +629,63 @@ class WorksheetProxy:
                 ):
                     result[cell.coordinate] = cell.value
         return result
+
+    def auto_financial_colors(self) -> None:
+        """Apply conventional financial modeling colors to all cells in sheet.
+
+        See RangeProxy.auto_financial_colors() for details.
+        """
+
+        if self._on_write:
+            self._on_write()
+
+        for row in self._formula_ws.iter_rows():
+            for cell in row:
+                if cell.value is not None:
+                    color = infer_financial_color(cell.value)
+                    old_font = cell.font
+                    cell.font = Font(
+                        name=old_font.name,
+                        size=old_font.size,
+                        bold=old_font.bold,
+                        italic=old_font.italic,
+                        underline=old_font.underline,
+                        strike=old_font.strike,
+                        color=color,
+                    )
+
+    def lint_financial_colors(self) -> list:
+        """Check all cells in sheet for financial color convention violations.
+
+        See RangeProxy.lint_financial_colors() for details.
+
+        Returns:
+            List of ColorLintViolation objects
+        """
+
+        violations = []
+        for row in self._formula_ws.iter_rows():
+            for cell in row:
+                if cell.value is not None:
+                    expected = infer_financial_color(cell.value)
+                    current = None
+                    if cell.font and cell.font.color:
+                        color = cell.font.color
+                        if color.type == "rgb" and color.rgb:
+                            current = color.rgb
+                        elif color.type == "theme":
+                            current = f"theme:{color.theme}"
+
+                    if current != expected:
+                        violations.append(
+                            ColorLintViolation(
+                                cell=cell.coordinate,
+                                value=cell.value,
+                                expected_color=expected,
+                                current_color=current,
+                            )
+                        )
+        return violations
 
     # Forward all other attributes to formula worksheet
     def __getattr__(self, name: str) -> Any:

@@ -238,12 +238,64 @@ with run("model.xlsx") as ctx:
 
 **Available colors:** `HARDCODE` (blue), `FORMULA` (black), `EXTERNAL_LINK` (green)
 
+### Financial Color Automation
+
+Automatically apply or lint financial modeling color conventions:
+
+```python
+from headless_excel import create, run, Colors, infer_financial_color
+from openpyxl.styles import Font
+
+# Infer the correct color for any value
+infer_financial_color(100)           # Colors.HARDCODE (blue)
+infer_financial_color("=A1+B1")      # Colors.FORMULA (black)
+infer_financial_color("=Sheet2!A1")  # Colors.EXTERNAL_LINK (green)
+
+# Auto-apply colors based on cell content
+with create("model.xlsx") as ctx:
+    ws = ctx.active
+    ws["A1"] = 100
+    ws["A2"] = "=A1*2"
+    ws["A3"] = "=Sheet2!B1"
+
+    # Apply to range
+    ws.range("A1:A3").auto_financial_colors()
+
+    # Or apply to entire sheet
+    ws.auto_financial_colors()
+
+    # Or apply to entire workbook
+    ctx.auto_financial_colors()
+
+# Lint: check for color violations
+with run("model.xlsx") as ctx:
+    # Check specific range
+    violations = ctx.active.range("A1:D10").lint_financial_colors()
+
+    # Check entire workbook
+    violations = ctx.lint_financial_colors()
+    for sheet, sheet_violations in violations.items():
+        for v in sheet_violations:
+            print(f"{sheet}!{v.cell}: expected {v.expected_color}, got {v.current_color}")
+
+    # Raise on violations
+    ctx.lint_financial_colors(raise_on_violations=True)
+
+# Enforce via context parameter (useful for CI)
+with create("model.xlsx", lint_financial_colors=True) as ctx:
+    ws = ctx.active
+    ws["A1"] = 100
+    ws["A1"].font = Font(color=Colors.HARDCODE)  # Must color correctly!
+    # Raises ColorLintError on exit if colors don't match conventions
+```
+
 ### Exceptions
 
 - `ExcelError` - Base exception
 - `FormulaError` - Formula errors found (has `.errors` dict)
 - `RecalcError` - LibreOffice recalculation failed
 - `SyncError` - Save or sync operation failed
+- `ColorLintError` - Financial color conventions violated (has `.violations` dict)
 
 ## How It Works
 
