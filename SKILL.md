@@ -59,15 +59,17 @@ with run("existing.xlsx") as ctx:
     ws['A1'] = 'New Value'
     ws['B2'] = '=A1*2'
 
-    # Sheets: create, rename, delete, reorder
+    # create_sheet() returns a WorksheetProxy you can use immediately
     assumptions = ctx.create_sheet("Assumptions")
+    assumptions['A1'] = 'Title'  # ✅ Use the returned proxy directly
     cover = ctx.create_sheet("Cover", 0)  # insert at front
     assumptions.title = "Model Assumptions"
     ctx.delete_sheet("OldSheet")
     ctx.workbook.move_sheet("Revenue", -1)
 
-    # Switch active sheet
-    ctx.active = "Revenue"
+    # ctx.active = "SheetName" only works for EXISTING sheets
+    ctx.active = "Revenue"  # switch to an existing sheet
+    ws = ctx.active
 ```
 
 ## Reading Values & Formulas
