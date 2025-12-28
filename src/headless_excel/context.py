@@ -317,7 +317,7 @@ class ExcelContext:
         if raise_on_errors:
             sync_result.raise_on_errors()
 
-        print("Sync successful, changes saved")
+        logger.info("Sync successful, changes saved")
         return sync_result
 
     def lint_financial_colors(self) -> dict[str, list[ColorLintViolation]]:
