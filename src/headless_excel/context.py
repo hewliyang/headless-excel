@@ -97,6 +97,7 @@ class ExcelContext:
         path: str | Path,
         create: bool = False,
         recalc_timeout: int = 30,
+        auto_financial_colors: bool = False,
     ) -> None:
         """Initialize Excel context.
 
@@ -104,9 +105,11 @@ class ExcelContext:
             path: Path to the Excel file
             create: If True, create new workbook; if False, load existing
             recalc_timeout: Timeout in seconds for LibreOffice recalculation
+            auto_financial_colors: If True, apply financial colors before each sync
         """
         self.path = Path(path)
         self._recalc_timeout = recalc_timeout
+        self._auto_financial_colors = auto_financial_colors
         self._workbook: Workbook | None = None
         self._values_workbook: Workbook | None = None
         self._proxy: WorkbookProxy | None = None
@@ -267,6 +270,10 @@ class ExcelContext:
         """
         if self._workbook is None:
             raise RuntimeError("Context not initialized")
+
+        # Apply financial colors before saving if enabled
+        if self._auto_financial_colors:
+            self.auto_financial_colors()
 
         # Save current workbook
         try:
@@ -471,13 +478,14 @@ def _run_context(
     auto_financial_colors: bool,
 ) -> Generator[ExcelContext, None, None]:
     """Internal context manager for Excel operations."""
-    ctx = ExcelContext(path, create=create_mode, recalc_timeout=recalc_timeout)
+    ctx = ExcelContext(
+        path,
+        create=create_mode,
+        recalc_timeout=recalc_timeout,
+        auto_financial_colors=auto_financial_colors,
+    )
     try:
         yield ctx
-
-        # Apply financial colors before sync if requested
-        if auto_financial_colors and ctx._dirty:
-            ctx.auto_financial_colors()
 
         # Only sync if there were actual write operations
         if auto_sync and ctx._dirty:
