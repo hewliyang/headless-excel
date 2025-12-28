@@ -206,6 +206,34 @@ class TestAutoFinancialColors:
             assert ctx.sheet("Data")["A1"].font.color.rgb == Colors.HARDCODE  # type: ignore[union-attr]
             assert ctx.sheet("Calcs")["A1"].font.color.rgb == Colors.EXTERNAL_LINK  # type: ignore[union-attr]
 
+    def test_auto_financial_colors_after_sync_includes_new_sheets(self, tmp_path: Path):
+        """Sheets created after sync() should still get colors applied.
+
+        Regression test: worksheets property was using zip() which truncated
+        to the shorter list when _values_wb had fewer sheets than _formula_wb.
+        """
+        path = tmp_path / "test.xlsx"
+        with create(path, auto_sync=False, lint_financial_colors=False) as ctx:
+            # Create first sheet and sync
+            sheet1 = ctx.create_sheet("Data")
+            sheet1["A1"] = 100
+            ctx.sync()
+
+            # Create second sheet AFTER sync - this is the key scenario
+            sheet2 = ctx.create_sheet("Calcs")
+            sheet2["A1"] = "=Data!A1*2"
+            sheet2["B1"] = 200
+
+            # Apply colors - should include sheet2 even though _values_wb doesn't have it
+            ctx.auto_financial_colors()
+            ctx.sync()
+
+        # Verify colors were applied to both sheets
+        with run(path, auto_sync=False, lint_financial_colors=False) as ctx:
+            assert ctx.sheet("Data")["A1"].font.color.rgb == Colors.HARDCODE  # type: ignore[union-attr]
+            assert ctx.sheet("Calcs")["A1"].font.color.rgb == Colors.EXTERNAL_LINK  # type: ignore[union-attr]
+            assert ctx.sheet("Calcs")["B1"].font.color.rgb == Colors.HARDCODE  # type: ignore[union-attr]
+
     def test_auto_preserves_other_font_properties(self, tmp_path: Path):
         """auto_financial_colors should preserve bold, italic, etc."""
         path = tmp_path / "test.xlsx"

@@ -811,17 +811,13 @@ class WorkbookProxy:
     @property
     def worksheets(self) -> list[WorksheetProxy]:
         """Get list of all worksheets."""
-        if self._values_wb is not None:
-            return [
-                WorksheetProxy(f_ws, v_ws, self._on_write)
-                for f_ws, v_ws in zip(
-                    self._formula_wb.worksheets, self._values_wb.worksheets
-                )
-            ]
-        return [
-            WorksheetProxy(ws, None, self._on_write)
-            for ws in self._formula_wb.worksheets
-        ]
+        result = []
+        for f_ws in self._formula_wb.worksheets:
+            values_ws = None
+            if self._values_wb is not None and f_ws.title in self._values_wb.sheetnames:
+                values_ws = self._values_wb[f_ws.title]
+            result.append(WorksheetProxy(f_ws, values_ws, self._on_write))
+        return result
 
     # Forward all other attributes to formula workbook
     def __getattr__(self, name: str) -> Any:
