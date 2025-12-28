@@ -13,14 +13,25 @@ Keep heredocs under 100 LoC per tool call. Call `ctx.sync()` frequently to catch
 Remember that formula results do not materialize until either the context manager exits and reenters OR ctx.sync() is called manually.
 For any APIs not available in `headless-excel`, remember that `ws` is just a `openpyxl.Worksheet` object and `ctx.wb` is just a `openpyxl.Workbook`.
 
+**DEBUGGING: Always use `.dump()` instead of loops**
+
+```py
+# ❌ NEVER do this - verbose and error-prone
+for row in ws.iter_rows(min_row=1, max_row=5):
+    print([cell.value for cell in row])
+
+# ✅ ALWAYS do this instead
+ws.range("A1:D5").dump()                  # values as table
+ws.range("A1:D5").dump(show_formulas=True) # formulas as table
+```
+
 ## Creating Files
 
-```bash
-uv run python <<'EOF'
-from headless_excel import create, NumberFormats, Colors
+```py
+from headless_excel import create, NumberFormats
 from openpyxl.styles import Font, PatternFill
 
-with create("output.xlsx") as ctx:
+with create("output.xlsx", auto_financial_colors=True) as ctx:
     ws = ctx.active
     ws['A1'] = 'Revenue'
     ws['A2'] = 100
@@ -31,18 +42,13 @@ with create("output.xlsx") as ctx:
     ws['A1'].fill = PatternFill('solid', start_color='FFFF00')
 
     # Range styling
-    ws.range("A2:A3").apply_style(
-        font=Font(color=Colors.FORMULA),
-        number_format=NumberFormats.ACCOUNTING
-    )
+    ws.range("A2:A3").apply_style(number_format=NumberFormats.ACCOUNTING)
     ws.column_dimensions['A'].width = 20
-EOF
 ```
 
 ## Editing Files
 
-```bash
-uv run python <<'EOF'
+```py
 from headless_excel import run
 
 with run("existing.xlsx") as ctx:
@@ -59,13 +65,11 @@ with run("existing.xlsx") as ctx:
 
     # Switch active sheet
     ctx.active = "Revenue"
-EOF
 ```
 
 ## Reading Values & Formulas
 
-```bash
-uv run python <<'EOF'
+```py
 from headless_excel import run
 
 with run("model.xlsx") as ctx:
@@ -79,13 +83,11 @@ with run("model.xlsx") as ctx:
     # Formulas (dict of cell->formula)
     formulas = ctx.active.formulas
     formulas = ctx.active.range("A1:C10").formulas
-EOF
 ```
 
 ## Debugging with dump()
 
-```bash
-uv run python <<'EOF'
+```py
 from headless_excel import run
 
 with run("model.xlsx") as ctx:
@@ -99,13 +101,11 @@ with run("model.xlsx") as ctx:
 
     # Show formulas instead of values
     ctx.active.range("A1:D5").dump(show_formulas=True)
-EOF
 ```
 
 ## Bulk Read/Write with Ranges
 
-```bash
-uv run python <<'EOF'
+```py
 from headless_excel import create
 
 with create("model.xlsx") as ctx:
@@ -117,7 +117,6 @@ with create("model.xlsx") as ctx:
     ]
     data = ws.range("A1:C3").values
     print(ws.range("B2:E5").shape)  # (4, 4)
-EOF
 ```
 
 ## Number Formats & Colors
@@ -137,10 +136,25 @@ ws['A1'].font = Font(color=Colors.EXTERNAL_LINK) # Green for links
 
 **Formats:** `ACCOUNTING`, `ACCOUNTING_0DP`, `PERCENTAGE`, `PERCENTAGE_1DP`, `PERCENTAGE_2DP`, `NUMBER`, `NUMBER_0DP`, `DATE`, `DATE_LONG`
 
+## Auto-Apply Financial Colors
+
+Use `auto_financial_colors=True` in `create()`/`run()` to automatically apply correct colors (hardcode=blue, formula=black, external link=green) on save:
+
+```python
+with create("model.xlsx", auto_financial_colors=True) as ctx:
+    # ... build your model
+    # colors applied automatically on exit
+
+with run("existing.xlsx", auto_financial_colors=True) as ctx:
+    # ... edit your model
+    # colors applied automatically on exit
+```
+
+Always combine with `lint_financial_colors=True` to enforce conventions. These are true by default even if you do not pass them in.
+
 ## Error Handling
 
-```bash
-uv run python <<'EOF'
+```py
 from headless_excel import create, FormulaError
 
 try:
@@ -160,7 +174,6 @@ with run("model.xlsx", auto_sync=False) as ctx:
     if not result.success:
         for d in result.error_details:
             print(f"{d.error} at {d.location}: {d.formula}, refs: {d.neighbors}")
-EOF
 ```
 
 ## Common Pitfalls
@@ -168,3 +181,14 @@ EOF
 - Column mapping: column 64 = BL, not BK
 - Division by zero: check denominators (#DIV/0!)
 - Cross-sheet refs: use `Sheet1!A1` format
+
+## Styling Preferences in Finance
+
+- Always use `auto_financial_colors=True` and `lint_financial_colors=True` in `create()`/`run()`
+- Minimal fills, use built-in constants for coloring hardcodes, cross-sheet links. Red for checks.
+- No 4-sided boxes—only use borders for vertical/horizontal separation of sections (e.g., historical vs projected years)
+- Appropriate widths so data is readable out of the box—must be client-ready
+
+## `headless-excel`
+
+Full documentation at `./README.md`.

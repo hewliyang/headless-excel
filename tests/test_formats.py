@@ -286,7 +286,7 @@ class TestLintFinancialColors:
 
         path = tmp_path / "test.xlsx"
         with caplog.at_level(logging.WARNING):
-            with create(path, auto_sync=False, lint_financial_colors=True) as ctx:
+            with create(path, auto_sync=False, lint_financial_colors=True, auto_financial_colors=False) as ctx:
                 ctx.active["A1"] = 100  # Violation: no color
 
         assert "Financial color violations" in caplog.text
@@ -331,3 +331,237 @@ class TestFormatColorViolations:
 
         s = format_color_violations({})
         assert s == "No color lint violations"
+
+
+class TestErrorTruncation:
+    """Test error truncation for LLM context management."""
+
+    def test_get_set_max_errors_displayed(self):
+        """get/set_max_errors_displayed should work correctly."""
+        from headless_excel import get_max_errors_displayed, set_max_errors_displayed
+
+        original = get_max_errors_displayed()
+        try:
+            assert original == 10  # Default
+
+            set_max_errors_displayed(5)
+            assert get_max_errors_displayed() == 5
+
+            set_max_errors_displayed(100)
+            assert get_max_errors_displayed() == 100
+        finally:
+            set_max_errors_displayed(original)
+
+    def test_color_violations_truncated(self):
+        """format_color_violations should truncate beyond max_errors_displayed."""
+        from headless_excel import get_max_errors_displayed, set_max_errors_displayed
+        from headless_excel.errors import format_color_violations
+
+        original = get_max_errors_displayed()
+        try:
+            set_max_errors_displayed(3)
+
+            # Create 10 violations
+            violations = {
+                "Sheet1": [
+                    ColorLintViolation(
+                        cell=f"A{i}",
+                        value=i * 100,
+                        expected_color=Colors.HARDCODE,
+                        current_color=None,
+                    )
+                    for i in range(1, 11)
+                ]
+            }
+            s = format_color_violations(violations)
+
+            # Should show total count
+            assert "Financial color violations (10)" in s
+
+            # Should show first 3
+            assert "Sheet1!A1" in s
+            assert "Sheet1!A2" in s
+            assert "Sheet1!A3" in s
+
+            # Should NOT show beyond limit
+            assert "Sheet1!A4" not in s
+            assert "Sheet1!A10" not in s
+
+            # Should show truncation message
+            assert "... and 7 more violation(s) (truncated)" in s
+        finally:
+            set_max_errors_displayed(original)
+
+    def test_color_violations_not_truncated_when_under_limit(self):
+        """format_color_violations should not truncate when under limit."""
+        from headless_excel import get_max_errors_displayed, set_max_errors_displayed
+        from headless_excel.errors import format_color_violations
+
+        original = get_max_errors_displayed()
+        try:
+            set_max_errors_displayed(10)
+
+            # Create 5 violations (under limit)
+            violations = {
+                "Sheet1": [
+                    ColorLintViolation(
+                        cell=f"A{i}",
+                        value=i * 100,
+                        expected_color=Colors.HARDCODE,
+                        current_color=None,
+                    )
+                    for i in range(1, 6)
+                ]
+            }
+            s = format_color_violations(violations)
+
+            # Should show all 5
+            assert "Financial color violations (5)" in s
+            assert "Sheet1!A1" in s
+            assert "Sheet1!A5" in s
+
+            # Should NOT show truncation message
+            assert "truncated" not in s
+        finally:
+            set_max_errors_displayed(original)
+
+    def test_formula_error_str_truncated(self):
+        """FormulaError.__str__ should truncate beyond max_errors_displayed."""
+        from headless_excel import (
+            FormulaError,
+            get_max_errors_displayed,
+            set_max_errors_displayed,
+        )
+
+        original = get_max_errors_displayed()
+        try:
+            set_max_errors_displayed(3)
+
+            # Create FormulaError with 10 errors
+            err = FormulaError(
+                errors={
+                    "#REF!": [f"Sheet1!A{i}" for i in range(1, 6)],
+                    "#DIV/0!": [f"Sheet1!B{i}" for i in range(1, 6)],
+                },
+                total=10,
+            )
+            s = str(err)
+
+            # Should show total count
+            assert "Formula errors (10)" in s
+
+            # Should only show first 3 total
+            error_lines = [line for line in s.split("\n") if line.startswith("  ") and "truncated" not in line]
+            assert len(error_lines) == 3
+
+            # Should show truncation message
+            assert "... and 7 more error(s) (truncated)" in s
+        finally:
+            set_max_errors_displayed(original)
+
+    def test_formula_error_str_with_details_truncated(self):
+        """FormulaError.__str__ with error_details should truncate."""
+        from headless_excel import (
+            ErrorDetail,
+            FormulaError,
+            get_max_errors_displayed,
+            set_max_errors_displayed,
+        )
+
+        original = get_max_errors_displayed()
+        try:
+            set_max_errors_displayed(2)
+
+            # Create FormulaError with 5 detailed errors
+            err = FormulaError(
+                errors={"#DIV/0!": [f"Sheet1!A{i}" for i in range(1, 6)]},
+                total=5,
+                error_details=[
+                    ErrorDetail(
+                        location=f"Sheet1!A{i}",
+                        error="#DIV/0!",
+                        formula=f"=B{i}/C{i}",
+                        neighbors={f"Sheet1!B{i}": 100, f"Sheet1!C{i}": 0},
+                    )
+                    for i in range(1, 6)
+                ],
+            )
+            s = str(err)
+
+            # Should show total count
+            assert "Formula errors (5)" in s
+
+            # Should show first 2 with details
+            assert "Sheet1!A1" in s
+            assert "Sheet1!A2" in s
+            assert "formula=" in s
+
+            # Should NOT show beyond limit
+            assert "Sheet1!A3" not in s
+
+            # Should show truncation message
+            assert "... and 3 more error(s) (truncated)" in s
+        finally:
+            set_max_errors_displayed(original)
+
+    def test_formula_error_repr_uses_truncated_str(self):
+        """FormulaError.__repr__ should also be truncated to prevent context pollution."""
+        from headless_excel import (
+            FormulaError,
+            get_max_errors_displayed,
+            set_max_errors_displayed,
+        )
+
+        original = get_max_errors_displayed()
+        try:
+            set_max_errors_displayed(2)
+
+            err = FormulaError(
+                errors={"#REF!": [f"Sheet1!A{i}" for i in range(1, 6)]},
+                total=5,
+            )
+
+            # repr should be same as str (truncated)
+            assert repr(err) == str(err)
+            assert "truncated" in repr(err)
+        finally:
+            set_max_errors_displayed(original)
+
+    def test_formula_error_not_truncated_when_under_limit(self):
+        """FormulaError.__str__ should not truncate when under limit."""
+        from headless_excel import (
+            FormulaError,
+            get_max_errors_displayed,
+            set_max_errors_displayed,
+        )
+
+        original = get_max_errors_displayed()
+        try:
+            set_max_errors_displayed(10)
+
+            # Create FormulaError with 3 errors (under limit)
+            err = FormulaError(
+                errors={"#REF!": ["Sheet1!A1", "Sheet1!A2", "Sheet1!A3"]},
+                total=3,
+            )
+            s = str(err)
+
+            # Should show all 3
+            assert "Formula errors (3)" in s
+            assert "Sheet1!A1" in s
+            assert "Sheet1!A2" in s
+            assert "Sheet1!A3" in s
+
+            # Should NOT show truncation message
+            assert "truncated" not in s
+        finally:
+            set_max_errors_displayed(original)
+
+    def test_formula_error_empty(self):
+        """FormulaError with no errors should not show truncation."""
+        from headless_excel import FormulaError
+
+        err = FormulaError(errors={}, total=0)
+        s = str(err)
+        assert s == "No formula errors"
+        assert "truncated" not in s

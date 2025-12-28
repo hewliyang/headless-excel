@@ -7,6 +7,8 @@ from headless_excel.errors import (
     FormulaError,
     RecalcError,
     SyncError,
+    get_max_errors_displayed,
+    set_max_errors_displayed,
 )
 from headless_excel.formats import Colors, NumberFormats, infer_financial_color
 from headless_excel.proxy import CellProxy, RangeProxy, WorkbookProxy, WorksheetProxy
@@ -27,6 +29,8 @@ __all__ = [
     "WorkbookProxy",
     "WorksheetProxy",
     "create",
+    "get_max_errors_displayed",
     "infer_financial_color",
     "run",
+    "set_max_errors_displayed",
 ]

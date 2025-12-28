@@ -519,7 +519,7 @@ def run(
     raise_on_errors: bool = True,
     recalc_timeout: int = 30,
     lint_financial_colors: bool = True,
-    auto_financial_colors: bool = False,
+    auto_financial_colors: bool = True,
 ) -> Generator[ExcelContext, None, None]:
     """Open an existing Excel file for operations.
 
@@ -584,7 +584,7 @@ def create(
     raise_on_errors: bool = True,
     recalc_timeout: int = 30,
     lint_financial_colors: bool = True,
-    auto_financial_colors: bool = False,
+    auto_financial_colors: bool = True,
 ) -> Generator[ExcelContext, None, None]:
     """Create a new Excel file.
 
