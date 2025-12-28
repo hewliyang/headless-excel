@@ -31,7 +31,10 @@ ws.range("A1:D5").dump(show_formulas=True) # formulas as table
 from headless_excel import create, NumberFormats
 from openpyxl.styles import Font, PatternFill
 
-with create("output.xlsx", auto_financial_colors=True) as ctx:
+with create(
+    "output.xlsx",
+    overwrite=True, # to replace an existing file, else to continue use `run` instead of `create
+) as ctx:
     ws = ctx.active
     ws['A1'] = 'Revenue'
     ws['A2'] = 100
@@ -191,4 +194,4 @@ with run("model.xlsx", auto_sync=False) as ctx:
 
 ## `headless-excel`
 
-Full documentation at `./README.md`.
+IMPORTANT: Read the full library documentation in ./README.md
