@@ -5,7 +5,6 @@ from pathlib import Path
 from openpyxl.styles import Font
 
 from headless_excel import (
-    ColorLintError,
     ColorLintViolation,
     Colors,
     NumberFormats,
@@ -281,28 +280,16 @@ class TestLintFinancialColors:
             assert len(violations["Data"]) == 1
             assert len(violations["Calcs"]) == 1
 
-    def test_context_lint_raise_on_violations(self, tmp_path: Path):
-        """ctx.lint_financial_colors should raise when requested."""
-        path = tmp_path / "test.xlsx"
-        with create(path, auto_sync=False, lint_financial_colors=False) as ctx:
-            ctx.active["A1"] = 100  # Violation
+    def test_lint_financial_colors_context_param(self, tmp_path: Path, caplog):
+        """lint_financial_colors=True on context should log warning on exit."""
+        import logging
 
-            try:
-                ctx.lint_financial_colors(raise_on_violations=True)
-                assert False, "Should have raised ColorLintError"
-            except ColorLintError as e:
-                assert e.total == 1
-                assert "Sheet" in e.violations
-
-    def test_lint_financial_colors_context_param(self, tmp_path: Path):
-        """lint_financial_colors=True on context should raise on exit."""
         path = tmp_path / "test.xlsx"
-        try:
+        with caplog.at_level(logging.WARNING):
             with create(path, auto_sync=False, lint_financial_colors=True) as ctx:
                 ctx.active["A1"] = 100  # Violation: no color
-            assert False, "Should have raised SystemExit"
-        except SystemExit as e:
-            assert "Financial color violations" in str(e)
+
+        assert "Financial color violations" in caplog.text
 
     def test_lint_passes_with_correct_colors(self, tmp_path: Path):
         """lint_financial_colors=True should pass when colors are correct."""
@@ -316,11 +303,13 @@ class TestLintFinancialColors:
             # Should not raise
 
 
-class TestColorLintError:
-    """Test ColorLintError exception."""
+class TestFormatColorViolations:
+    """Test format_color_violations function."""
 
-    def test_error_str(self):
-        """ColorLintError should have useful string representation."""
+    def test_format_violations(self):
+        """format_color_violations should produce useful string representation."""
+        from headless_excel.errors import format_color_violations
+
         violations = {
             "Sheet1": [
                 ColorLintViolation(
@@ -331,13 +320,14 @@ class TestColorLintError:
                 )
             ]
         }
-        err = ColorLintError(violations=violations, total=1)
-        s = str(err)
+        s = format_color_violations(violations)
         assert "Financial color violations (1)" in s
         assert "Sheet1!A1" in s
         assert "HARDCODE" in s
 
-    def test_error_empty(self):
-        """Empty ColorLintError should report no violations."""
-        err = ColorLintError()
-        assert str(err) == "No color lint violations"
+    def test_format_empty(self):
+        """Empty violations should report no violations."""
+        from headless_excel.errors import format_color_violations
+
+        s = format_color_violations({})
+        assert s == "No color lint violations"

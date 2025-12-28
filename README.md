@@ -268,7 +268,7 @@ with create("model.xlsx", lint_financial_colors=False) as ctx:
     # Or apply to entire workbook
     ctx.auto_financial_colors()
 
-# Lint: check for color violations (enabled by default)
+# Lint: check for color violations (enabled by default, logs warnings)
 with run("model.xlsx", lint_financial_colors=False) as ctx:
     # Check specific range
     violations = ctx.active.range("A1:D10").lint_financial_colors()
@@ -279,10 +279,7 @@ with run("model.xlsx", lint_financial_colors=False) as ctx:
         for v in sheet_violations:
             print(f"{sheet}!{v.cell}: expected {v.expected_color}, got {v.current_color}")
 
-    # Raise on violations
-    ctx.lint_financial_colors(raise_on_violations=True)
-
-# Financial color linting is enabled by default
+# Financial color linting is enabled by default and logs warnings on violations
 # To disable it:
 with create("model.xlsx", lint_financial_colors=False) as ctx:
     ws = ctx.active
@@ -295,7 +292,6 @@ with create("model.xlsx", lint_financial_colors=False) as ctx:
 - `FormulaError` - Formula errors found (has `.errors` dict)
 - `RecalcError` - LibreOffice recalculation failed
 - `SyncError` - Save or sync operation failed
-- `ColorLintError` - Financial color conventions violated (has `.violations` dict)
 
 ## How It Works
 

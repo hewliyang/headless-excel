@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -12,14 +13,16 @@ from typing import Any, TypeVar
 from openpyxl import Workbook, load_workbook
 
 from headless_excel.errors import (
-    ColorLintError,
     ColorLintViolation,
     FormulaError,
     RecalcError,
     SyncError,
+    format_color_violations,
 )
 from headless_excel.proxy import WorkbookProxy, WorksheetProxy
 from headless_excel.recalc import recalc
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -317,9 +320,7 @@ class ExcelContext:
         print("Sync successful, changes saved")
         return sync_result
 
-    def lint_financial_colors(
-        self, raise_on_violations: bool = False
-    ) -> dict[str, list[ColorLintViolation]]:
+    def lint_financial_colors(self) -> dict[str, list[ColorLintViolation]]:
         """Check all sheets for financial color convention violations.
 
         Financial modeling conventions:
@@ -327,38 +328,24 @@ class ExcelContext:
         - Black (FORMULA): Formulas without sheet references
         - Green (EXTERNAL_LINK): Formulas with sheet references
 
-        Args:
-            raise_on_violations: If True, raise ColorLintError if violations found
-
         Returns:
             Dict mapping sheet names to list of ColorLintViolation objects
-
-        Raises:
-            ColorLintError: If raise_on_violations=True and violations found
 
         Example:
             violations = ctx.lint_financial_colors()
             for sheet, sheet_violations in violations.items():
                 for v in sheet_violations:
                     print(f"{sheet}!{v.cell}: expected {v.expected_color}")
-
-            # Or raise on violations:
-            ctx.lint_financial_colors(raise_on_violations=True)
         """
         if self._workbook is None:
             raise RuntimeError("Context not initialized")
 
         all_violations: dict[str, list[ColorLintViolation]] = {}
-        total = 0
 
         for ws_proxy in self.workbook.worksheets:
             sheet_violations = ws_proxy.lint_financial_colors()
             if sheet_violations:
                 all_violations[ws_proxy.title] = sheet_violations
-                total += len(sheet_violations)
-
-        if raise_on_violations and all_violations:
-            raise ColorLintError(violations=all_violations, total=total)
 
         return all_violations
 
@@ -481,11 +468,16 @@ def _run_context(
     raise_on_errors: bool,
     recalc_timeout: int,
     lint_financial_colors: bool,
+    auto_financial_colors: bool,
 ) -> Generator[ExcelContext, None, None]:
     """Internal context manager for Excel operations."""
     ctx = ExcelContext(path, create=create_mode, recalc_timeout=recalc_timeout)
     try:
         yield ctx
+
+        # Apply financial colors before sync if requested
+        if auto_financial_colors and ctx._dirty:
+            ctx.auto_financial_colors()
 
         # Only sync if there were actual write operations
         if auto_sync and ctx._dirty:
@@ -513,11 +505,9 @@ def _run_context(
 
         # Check financial color conventions if requested
         if lint_financial_colors:
-            violations = ctx.lint_financial_colors(raise_on_violations=False)
+            violations = ctx.lint_financial_colors()
             if violations:
-                total = sum(len(v) for v in violations.values())
-                err = ColorLintError(violations=violations, total=total)
-                raise SystemExit(str(err))
+                logger.warning(format_color_violations(violations))
     finally:
         ctx.close()
 
@@ -529,6 +519,7 @@ def run(
     raise_on_errors: bool = True,
     recalc_timeout: int = 30,
     lint_financial_colors: bool = True,
+    auto_financial_colors: bool = False,
 ) -> Generator[ExcelContext, None, None]:
     """Open an existing Excel file for operations.
 
@@ -551,6 +542,12 @@ def run(
         with run("model.xlsx", lint_financial_colors=False) as ctx:
             ctx.active["A1"] = 100  # No color check on exit
 
+        # Auto-apply financial colors before sync:
+        with run("model.xlsx", auto_financial_colors=True) as ctx:
+            ctx.active["A1"] = 100  # Blue (hardcode)
+            ctx.active["A2"] = "=A1*2"  # Black (formula)
+            # Colors applied automatically before sync
+
     Args:
         path: Path to existing Excel file
         auto_sync: If True, automatically sync on context exit
@@ -558,16 +555,24 @@ def run(
             else, raises SystemExit with error message to suppress traceback
         recalc_timeout: Timeout in seconds for LibreOffice recalculation
         lint_financial_colors: If True (default), check color conventions on exit
+            and log warnings for violations
+        auto_financial_colors: If True, automatically apply financial colors
+            (blue=hardcode, black=formula, green=external) before sync
 
     Yields:
         ExcelContext for operations
 
     Raises:
         FileNotFoundError: If file does not exist
-        ColorLintError: If lint_financial_colors=True and conventions violated
     """
     yield from _run_context(
-        path, False, auto_sync, raise_on_errors, recalc_timeout, lint_financial_colors
+        path,
+        False,
+        auto_sync,
+        raise_on_errors,
+        recalc_timeout,
+        lint_financial_colors,
+        auto_financial_colors,
     )
 
 
@@ -579,6 +584,7 @@ def create(
     raise_on_errors: bool = True,
     recalc_timeout: int = 30,
     lint_financial_colors: bool = True,
+    auto_financial_colors: bool = False,
 ) -> Generator[ExcelContext, None, None]:
     """Create a new Excel file.
 
@@ -595,6 +601,12 @@ def create(
         with create("model.xlsx", lint_financial_colors=False) as ctx:
             ctx.active["A1"] = 100  # No color check on exit
 
+        # Auto-apply financial colors before sync:
+        with create("model.xlsx", overwrite=True, auto_financial_colors=True) as ctx:
+            ctx.active["A1"] = 100  # Blue (hardcode)
+            ctx.active["A2"] = "=A1*2"  # Black (formula)
+            # Colors applied automatically before sync
+
     Args:
         path: Path for the new Excel file
         overwrite: If True, overwrite existing file; if False, raise FileExistsError
@@ -603,13 +615,15 @@ def create(
             else, raises SystemExit with error message to suppress traceback
         recalc_timeout: Timeout in seconds for LibreOffice recalculation
         lint_financial_colors: If True (default), check color conventions on exit
+            and log warnings for violations
+        auto_financial_colors: If True, automatically apply financial colors
+            (blue=hardcode, black=formula, green=external) before sync
 
     Yields:
         ExcelContext for operations
 
     Raises:
         FileExistsError: If file exists and overwrite=False
-        ColorLintError: If lint_financial_colors=True and conventions violated
     """
     p = Path(path)
     if p.exists() and not overwrite:
@@ -617,5 +631,11 @@ def create(
             f"File already exists: {path}. Use overwrite=True to replace."
         )
     yield from _run_context(
-        path, True, auto_sync, raise_on_errors, recalc_timeout, lint_financial_colors
+        path,
+        True,
+        auto_sync,
+        raise_on_errors,
+        recalc_timeout,
+        lint_financial_colors,
+        auto_financial_colors,
     )

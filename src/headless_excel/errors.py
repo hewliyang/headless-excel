@@ -88,37 +88,31 @@ class ColorLintViolation:
     current_color: str | None
 
 
-@dataclass
-class ColorLintError(ExcelError):
-    """Financial color conventions violated.
+def format_color_violations(
+    violations: dict[str, list[ColorLintViolation]],
+) -> str:
+    """Format color lint violations as a human-readable string.
 
-    Raised when cells don't follow standard financial modeling color conventions:
-    - Blue: Hardcoded input values
-    - Black: Formulas
-    - Green: External/cross-sheet links
-
-    Attributes:
+    Args:
         violations: Dict mapping sheet names to list of violations
-        total: Total number of violations
+
+    Returns:
+        Formatted string describing all violations
     """
+    if not violations:
+        return "No color lint violations"
 
-    violations: dict[str, list[ColorLintViolation]] = field(default_factory=dict)
-    total: int = 0
-
-    def __str__(self) -> str:
-        if not self.violations:
-            return "No color lint violations"
-
-        lines = [f"Financial color violations ({self.total}):"]
-        for sheet_name, sheet_violations in self.violations.items():
-            for v in sheet_violations:
-                expected = _color_name(v.expected_color)
-                current = _color_name(v.current_color) if v.current_color else "none"
-                val_str = _format_value(v.value)
-                lines.append(
-                    f"  {sheet_name}!{v.cell}: expected {expected}, got {current} (value={val_str})"
-                )
-        return "\n".join(lines)
+    total = sum(len(v) for v in violations.values())
+    lines = [f"Financial color violations ({total}):"]
+    for sheet_name, sheet_violations in violations.items():
+        for v in sheet_violations:
+            expected = _color_name(v.expected_color)
+            current = _color_name(v.current_color) if v.current_color else "none"
+            val_str = _format_value(v.value)
+            lines.append(
+                f"  {sheet_name}!{v.cell}: expected {expected}, got {current} (value={val_str})"
+            )
+    return "\n".join(lines)
 
 
 def _color_name(color_code: str | None) -> str:

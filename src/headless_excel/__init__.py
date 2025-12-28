@@ -2,7 +2,6 @@
 
 from headless_excel.context import ErrorDetail, ExcelContext, SyncResult, create, run
 from headless_excel.errors import (
-    ColorLintError,
     ColorLintViolation,
     ExcelError,
     FormulaError,
@@ -14,7 +13,6 @@ from headless_excel.proxy import CellProxy, RangeProxy, WorkbookProxy, Worksheet
 
 __all__ = [
     "CellProxy",
-    "ColorLintError",
     "ColorLintViolation",
     "Colors",
     "ErrorDetail",
