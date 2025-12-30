@@ -1027,3 +1027,216 @@ class TestRangeDump:
             result = ws.range("A1:A1").dump()
 
             assert "…" in result  # Truncation indicator
+
+
+class TestFormulaCount:
+    """Tests for formula_count property on RangeProxy and WorksheetProxy."""
+
+    def test_range_formula_count(self, tmp_path: Path):
+        """Test formula_count on RangeProxy."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = 10
+            ws["A2"] = "=A1*2"
+            ws["A3"] = "=A1+A2"
+            ws["B1"] = "text"
+            ws["B2"] = "=A1+10"
+
+            # Range A1:A3 has 2 formulas
+            assert ws.range("A1:A3").formula_count == 2
+
+            # Range A1:B2 has 2 formulas
+            assert ws.range("A1:B2").formula_count == 2
+
+            # Range A1:B3 has 3 formulas
+            assert ws.range("A1:B3").formula_count == 3
+
+    def test_range_formula_count_empty(self, tmp_path: Path):
+        """Test formula_count returns 0 for range with no formulas."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = 10
+            ws["A2"] = "text"
+
+            assert ws.range("A1:A2").formula_count == 0
+
+    def test_sheet_formula_count(self, tmp_path: Path):
+        """Test formula_count on WorksheetProxy."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = 10
+            ws["A2"] = "=A1*2"
+            ws["B5"] = "=SUM(A1:A2)"
+            ws["C10"] = "=A1+B5"
+
+            assert ws.formula_count == 3
+
+    def test_sheet_formula_count_empty(self, tmp_path: Path):
+        """Test formula_count returns 0 for sheet with no formulas."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = 10
+            ws["A2"] = "text"
+
+            assert ws.formula_count == 0
+
+
+class TestFindErrors:
+    """Tests for find_errors() on RangeProxy, WorksheetProxy, and ExcelContext."""
+
+    def test_range_find_errors_after_sync(self, tmp_path: Path):
+        """Test find_errors on RangeProxy after sync."""
+        path = tmp_path / "test.xlsx"
+
+        with create(path, raise_on_errors=False, lint_financial_colors=False) as ctx:
+            ws = ctx.active
+            ws["A1"] = 10
+            ws["A2"] = 0
+            ws["A3"] = "=A1/A2"  # Will be #DIV/0!
+            ws["B1"] = "=NonExistent()"  # Will be #NAME?
+
+            ctx.sync()
+
+            # Check range with #DIV/0!
+            errors = ws.range("A1:A3").find_errors()
+            assert "#DIV/0!" in errors
+            assert "A3" in errors["#DIV/0!"]
+
+            # Check range with #NAME?
+            errors = ws.range("B1:B1").find_errors()
+            assert "#NAME?" in errors
+            assert "B1" in errors["#NAME?"]
+
+    def test_range_find_errors_no_errors(self, tmp_path: Path):
+        """Test find_errors returns empty dict when no errors."""
+        path = tmp_path / "test.xlsx"
+
+        with create(path, raise_on_errors=False, lint_financial_colors=False) as ctx:
+            ws = ctx.active
+            ws["A1"] = 10
+            ws["A2"] = 2
+            ws["A3"] = "=A1/A2"  # Valid: 5
+
+            ctx.sync()
+
+            errors = ws.range("A1:A3").find_errors()
+            assert errors == {}
+
+    def test_range_find_errors_before_sync(self, tmp_path: Path):
+        """Test find_errors returns empty dict before sync (no values_ws)."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = "=1/0"
+
+            # Before sync, values_ws is None
+            errors = ws.range("A1:A1").find_errors()
+            assert errors == {}
+
+    def test_sheet_find_errors_after_sync(self, tmp_path: Path):
+        """Test find_errors on WorksheetProxy after sync."""
+        path = tmp_path / "test.xlsx"
+
+        with create(path, raise_on_errors=False, lint_financial_colors=False) as ctx:
+            ws = ctx.active
+            ws["A1"] = 10
+            ws["A2"] = 0
+            ws["A3"] = "=A1/A2"  # #DIV/0!
+            ws["C10"] = "=MissingSheet!A1"  # #REF! or #NAME?
+
+            ctx.sync()
+
+            errors = ws.find_errors()
+            assert "#DIV/0!" in errors
+            assert "A3" in errors["#DIV/0!"]
+            # The other error could be #REF! or #NAME? depending on LibreOffice
+            assert len(errors) >= 1
+
+    def test_sheet_find_errors_no_errors(self, tmp_path: Path):
+        """Test find_errors returns empty dict when no errors on sheet."""
+        path = tmp_path / "test.xlsx"
+
+        with create(path, raise_on_errors=False, lint_financial_colors=False) as ctx:
+            ws = ctx.active
+            ws["A1"] = 10
+            ws["A2"] = "=A1*2"
+
+            ctx.sync()
+
+            errors = ws.find_errors()
+            assert errors == {}
+
+    def test_context_find_errors_single_sheet(self, tmp_path: Path):
+        """Test find_errors on ExcelContext with single sheet."""
+        path = tmp_path / "test.xlsx"
+
+        with create(path, raise_on_errors=False, lint_financial_colors=False) as ctx:
+            ws = ctx.active
+            ws["A1"] = 0
+            ws["A2"] = "=1/A1"  # #DIV/0!
+
+            ctx.sync()
+
+            errors = ctx.find_errors()
+            assert "#DIV/0!" in errors
+            # Should be fully qualified with sheet name
+            assert any("A2" in loc for loc in errors["#DIV/0!"])
+
+    def test_context_find_errors_multiple_sheets(self, tmp_path: Path):
+        """Test find_errors on ExcelContext aggregates from all sheets."""
+        path = tmp_path / "test.xlsx"
+
+        with create(path, raise_on_errors=False, lint_financial_colors=False) as ctx:
+            ws1 = ctx.create_sheet("Sheet1")
+            ws1["A1"] = 0
+            ws1["A2"] = "=1/A1"  # #DIV/0!
+
+            ws2 = ctx.create_sheet("Sheet2")
+            ws2["B1"] = "=UnknownFunc()"  # #NAME?
+
+            ctx.sync()
+
+            errors = ctx.find_errors()
+
+            # Should have errors from both sheets
+            assert "#DIV/0!" in errors
+            assert "#NAME?" in errors
+
+            # Locations should be fully qualified
+            assert any("Sheet1!" in loc for loc in errors["#DIV/0!"])
+            assert any("Sheet2!" in loc for loc in errors["#NAME?"])
+
+    def test_context_find_errors_no_errors(self, tmp_path: Path):
+        """Test find_errors returns empty dict when no errors in workbook."""
+        path = tmp_path / "test.xlsx"
+
+        with create(path, raise_on_errors=False, lint_financial_colors=False) as ctx:
+            ws = ctx.active
+            ws["A1"] = 10
+            ws["A2"] = "=A1*2"
+
+            ctx.sync()
+
+            errors = ctx.find_errors()
+            assert errors == {}
+
+    def test_context_find_errors_before_sync(self, tmp_path: Path):
+        """Test find_errors returns empty dict before sync."""
+        path = tmp_path / "test.xlsx"
+
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = "=1/0"
+
+            # Before sync
+            errors = ctx.find_errors()
+            assert errors == {}

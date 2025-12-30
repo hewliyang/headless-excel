@@ -15,7 +15,6 @@ from openpyxl import Workbook, load_workbook
 from headless_excel.errors import (
     ColorLintViolation,
     FormulaError,
-    RecalcError,
     SyncError,
     format_color_violations,
 )
@@ -281,11 +280,8 @@ class ExcelContext:
         except Exception as e:
             raise SyncError(f"Failed to save workbook: {e}") from e
 
-        # Recalculate via LibreOffice
-        result = recalc(self.path, timeout=self._recalc_timeout)
-
-        if "error" in result:
-            raise RecalcError(result["error"])
+        # Recalculate via LibreOffice (raises RecalcError on failure)
+        recalc(self.path, timeout=self._recalc_timeout)
 
         # Reload formula workbook (to pick up any LibreOffice changes)
         self._workbook = load_workbook(self.path)
@@ -304,16 +300,14 @@ class ExcelContext:
 
         self._dirty = False
 
-        # Build sync result
-        errors: dict[str, list[str]] = {}
-        for err_type, err_info in result.get("error_summary", {}).items():
-            errors[err_type] = err_info.get("locations", [])
-
+        # Scrape for formula errors
+        errors = self.find_errors()
+        total_errors = sum(len(locs) for locs in errors.values())
         error_details = self._build_error_details(errors)
 
         sync_result = SyncResult(
-            success=result.get("status") == "success",
-            total_errors=result.get("total_errors", 0),
+            success=total_errors == 0,
+            total_errors=total_errors,
             errors=errors,
             error_details=error_details,
         )
@@ -326,6 +320,35 @@ class ExcelContext:
 
         logger.info("Sync successful, changes saved")
         return sync_result
+
+    def find_errors(self) -> dict[str, list[str]]:
+        """Find formula errors across all sheets.
+
+        Scans all worksheets for Excel error values like #DIV/0!, #REF!, etc.
+
+        Returns:
+            Dict mapping error type to list of fully-qualified locations
+            (e.g., 'Sheet1!A3'). Only includes error types with occurrences.
+
+        Example:
+            >>> ctx.find_errors()
+            {'#DIV/0!': ['Sheet1!A3', 'Sheet2!B5'], '#REF!': ['Sheet1!C10']}
+        """
+        if self._proxy is None:
+            return {}
+
+        all_errors: dict[str, list[str]] = {}
+
+        for ws_proxy in self._proxy.worksheets:
+            sheet_errors = ws_proxy.find_errors()
+            for err_type, locations in sheet_errors.items():
+                qualified = [f"{ws_proxy.title}!{loc}" for loc in locations]
+                if err_type in all_errors:
+                    all_errors[err_type].extend(qualified)
+                else:
+                    all_errors[err_type] = qualified
+
+        return all_errors
 
     def lint_financial_colors(self) -> dict[str, list[ColorLintViolation]]:
         """Check all sheets for financial color convention violations.

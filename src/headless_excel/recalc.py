@@ -1,234 +1,171 @@
-#!/usr/bin/env python3
-"""
-Excel Formula Recalculation Script
-Recalculates all formulas in an Excel file using LibreOffice
-
-© 2025 Anthropic, PBC. All rights reserved.
-
-LICENSE: Use of these materials (including all code, prompts, assets, files,
-and other components of this Skill) is governed by your agreement with
-Anthropic regarding use of Anthropic's services. If no separate agreement
-exists, use is governed by Anthropic's Consumer Terms of Service or
-Commercial Terms of Service, as applicable:
-https://www.anthropic.com/legal/consumer-terms
-https://www.anthropic.com/legal/commercial-terms
-Your applicable agreement is referred to as the "Agreement." "Services" are
-as defined in the Agreement.
-
-ADDITIONAL RESTRICTIONS: Notwithstanding anything in the Agreement to the
-contrary, users may not:
-
-- Extract these materials from the Services or retain copies of these
-  materials outside the Services
-- Reproduce or copy these materials, except for temporary copies created
-  automatically during authorized use of the Services
-- Create derivative works based on these materials
-- Distribute, sublicense, or transfer these materials to any third party
-- Make, offer to sell, sell, or import any inventions embodied in these
-  materials
-- Reverse engineer, decompile, or disassemble these materials
-
-The receipt, viewing, or possession of these materials does not convey or
-imply any license or right beyond those expressly granted above.
-
-Anthropic retains all right, title, and interest in these materials,
-including all copyrights, patents, and other intellectual property rights.
-"""
-
-import json
 import os
-import platform
+import signal
 import subprocess
-import sys
 from pathlib import Path
+from sys import platform
 
-from openpyxl import load_workbook
+from headless_excel.errors import RecalcError
 
+# LibreOffice macro configuration
+MACRO_MODULE_NAME = "HeadlessExcel"
+MACRO_SUB_NAME = "RecalculateAndSave"
 
-def setup_libreoffice_macro():
-    """Setup LibreOffice macro for recalculation if not already configured"""
-    if platform.system() == "Darwin":
-        macro_dir = os.path.expanduser(
-            "~/Library/Application Support/LibreOffice/4/user/basic/Standard"
-        )
-    else:
-        macro_dir = os.path.expanduser("~/.config/libreoffice/4/user/basic/Standard")
+# Platform-specific LibreOffice user directories
+LIBREOFFICE_USER_DIR_MACOS = (
+    Path.home() / "Library/Application Support/LibreOffice/4/user"
+)
+LIBREOFFICE_USER_DIR_LINUX = Path.home() / ".config/libreoffice/4/user"
 
-    macro_file = os.path.join(macro_dir, "Module1.xba")
+# Macro paths (relative to user dir)
+BASIC_STANDARD_DIR = Path("basic/Standard")
+MACRO_FILENAME = f"{MACRO_MODULE_NAME}.xba"
+SCRIPT_XLB_FILENAME = "script.xlb"
 
-    if os.path.exists(macro_file):
-        with open(macro_file) as f:
-            if "RecalculateAndSave" in f.read():
-                return True
-
-    if not os.path.exists(macro_dir):
-        subprocess.run(
-            ["soffice", "--headless", "--terminate_after_init"],
-            capture_output=True,
-            timeout=10,
-        )
-        os.makedirs(macro_dir, exist_ok=True)
-
-    macro_content = """<?xml version="1.0" encoding="UTF-8"?>
+# Macro content template
+MACRO_TEMPLATE = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE script:module PUBLIC "-//OpenOffice.org//DTD OfficeDocument 1.0//EN" "module.dtd">
-<script:module xmlns:script="http://openoffice.org/2000/script" script:name="Module1" script:language="StarBasic">
-    Sub RecalculateAndSave()
+<script:module xmlns:script="http://openoffice.org/2000/script" script:name="{MACRO_MODULE_NAME}" script:language="StarBasic">
+    Sub {MACRO_SUB_NAME}()
       ThisComponent.calculateAll()
       ThisComponent.store()
       ThisComponent.close(True)
     End Sub
 </script:module>"""
 
+
+def _get_libreoffice_user_dir() -> Path:
+    """Get the LibreOffice user directory for the current platform."""
+    if platform == "darwin":
+        return LIBREOFFICE_USER_DIR_MACOS
+    return LIBREOFFICE_USER_DIR_LINUX
+
+
+def _get_macro_dir() -> Path:
+    """Get the full path to the Standard macro directory."""
+    return _get_libreoffice_user_dir() / BASIC_STANDARD_DIR
+
+
+def _get_macro_file() -> Path:
+    """Get the full path to the macro file."""
+    return _get_macro_dir() / MACRO_FILENAME
+
+
+def _get_macro_uri() -> str:
+    """Get the URI to call the macro."""
+    return f"vnd.sun.star.script:Standard.{MACRO_MODULE_NAME}.{MACRO_SUB_NAME}?language=Basic&location=application"
+
+
+def _run_soffice(cmd: list[str], timeout: int) -> tuple[int, str]:
+    """Run soffice command with timeout and process group termination."""
+    proc = subprocess.Popen(
+        cmd,
+        start_new_session=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     try:
-        with open(macro_file, "w") as f:
-            f.write(macro_content)
+        _, stderr = proc.communicate(timeout=timeout)
+        return proc.returncode, stderr or ""
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGTERM)
+        proc.wait()
+        raise RecalcError(f"LibreOffice command timed out after {timeout} seconds")
+
+
+def _register_module_in_script_xlb(macro_dir: Path) -> bool:
+    """Register the module in script.xlb so LibreOffice recognizes it.
+
+    Only appends to existing script.xlb - never creates or overwrites.
+
+    Returns:
+        True if registered successfully or already registered, False if script.xlb doesn't exist.
+    """
+    script_xlb = macro_dir / SCRIPT_XLB_FILENAME
+
+    if not script_xlb.exists():
+        # Don't create - let LibreOffice manage this file
+        return False
+
+    content = script_xlb.read_text()
+
+    # Check if already registered
+    if f'library:name="{MACRO_MODULE_NAME}"' in content:
+        return True
+
+    # Append our module element before </library:library>
+    new_element = f' <library:element library:name="{MACRO_MODULE_NAME}"/>\n'
+    content = content.replace("</library:library>", new_element + "</library:library>")
+    script_xlb.write_text(content)
+    return True
+
+
+def setup_libreoffice_macro() -> bool:
+    """Setup LibreOffice macro for recalculation if not already configured."""
+    macro_dir = _get_macro_dir()
+    macro_file = _get_macro_file()
+
+    # Check if macro already exists and is correctly configured
+    if macro_file.exists():
+        content = macro_file.read_text()
+        if MACRO_SUB_NAME in content:
+            # Ensure it's registered in script.xlb
+            _register_module_in_script_xlb(macro_dir)
+            return True
+
+    # Initialize LibreOffice to create user directory if needed
+    if not macro_dir.exists():
+        try:
+            _run_soffice(
+                ["soffice", "--headless", "--terminate_after_init"], timeout=10
+            )
+        except RecalcError:
+            return False
+        macro_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write macro file
+    try:
+        macro_file.write_text(MACRO_TEMPLATE)
+        _register_module_in_script_xlb(macro_dir)
         return True
     except Exception:
         return False
 
 
-def recalc(filename, timeout=30):
+def recalc(filename: str | Path, timeout: int = 30) -> None:
     """
-    Recalculate formulas in Excel file and report any errors
+    Recalculate formulas in Excel file via LibreOffice.
 
     Args:
         filename: Path to Excel file
         timeout: Maximum time to wait for recalculation (seconds)
 
-    Returns:
-        dict with error locations and counts
+    Raises:
+        RecalcError: If recalculation fails
+        FileNotFoundError: If the file does not exist
     """
-    if not Path(filename).exists():
-        return {"error": f"File {filename} does not exist"}
+    filepath = Path(filename)
 
-    abs_path = str(Path(filename).absolute())
+    if not filepath.exists():
+        raise FileNotFoundError(f"File {filename} does not exist")
+
+    abs_path = str(filepath.absolute())
 
     if not setup_libreoffice_macro():
-        return {"error": "Failed to setup LibreOffice macro"}
+        raise RecalcError("Failed to setup LibreOffice macro")
 
     cmd = [
         "soffice",
         "--headless",
         "--norestore",
-        "vnd.sun.star.script:Standard.Module1.RecalculateAndSave?language=Basic&location=application",
+        _get_macro_uri(),
         abs_path,
     ]
 
-    # Handle timeout command differences between Linux and macOS
-    if platform.system() != "Windows":
-        timeout_cmd = "timeout" if platform.system() == "Linux" else None
-        if platform.system() == "Darwin":
-            # Check if gtimeout is available on macOS
-            try:
-                subprocess.run(
-                    ["gtimeout", "--version"],
-                    capture_output=True,
-                    timeout=1,
-                    check=False,
-                )
-                timeout_cmd = "gtimeout"
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                pass
+    returncode, stderr = _run_soffice(cmd, timeout=timeout)
 
-        if timeout_cmd:
-            cmd = [timeout_cmd, str(timeout)] + cmd
-
-    result = subprocess.run(cmd, capture_output=True, text=True)
-
-    if result.returncode != 0 and result.returncode != 124:  # 124 is timeout exit code
-        error_msg = result.stderr or "Unknown error during recalculation"
-        if "Module1" in error_msg or "RecalculateAndSave" not in error_msg:
-            return {"error": "LibreOffice macro not configured properly"}
+    if returncode != 0:
+        if MACRO_MODULE_NAME in stderr or MACRO_SUB_NAME not in stderr:
+            raise RecalcError("LibreOffice macro not configured properly")
         else:
-            return {"error": error_msg}
-
-    # Check for Excel errors in the recalculated file - scan ALL cells
-    try:
-        wb = load_workbook(filename, data_only=True)
-
-        excel_errors = [
-            "#VALUE!",
-            "#DIV/0!",
-            "#REF!",
-            "#NAME?",
-            "#NULL!",
-            "#NUM!",
-            "#N/A",
-        ]
-        error_details = {err: [] for err in excel_errors}
-        total_errors = 0
-
-        for sheet_name in wb.sheetnames:
-            ws = wb[sheet_name]
-            # Check ALL rows and columns - no limits
-            for row in ws.iter_rows():
-                for cell in row:
-                    if cell.value is not None and isinstance(cell.value, str):
-                        for err in excel_errors:
-                            if err in cell.value:
-                                location = f"{sheet_name}!{cell.coordinate}"
-                                error_details[err].append(location)
-                                total_errors += 1
-                                break
-
-        wb.close()
-
-        # Build result summary
-        error_summary: dict[str, dict[str, int | list[str]]] = {}
-        for err_type, locations in error_details.items():
-            if locations:
-                error_summary[err_type] = {
-                    "count": len(locations),
-                    "locations": locations[:20],  # Show up to 20 locations
-                }
-
-        result: dict[str, str | int | dict[str, dict[str, int | list[str]]]] = {
-            "status": "success" if total_errors == 0 else "errors_found",
-            "total_errors": total_errors,
-            "error_summary": error_summary,
-        }
-
-        # Add formula count for context - also check ALL cells
-        wb_formulas = load_workbook(filename, data_only=False)
-        formula_count = 0
-        for sheet_name in wb_formulas.sheetnames:
-            ws = wb_formulas[sheet_name]
-            for row in ws.iter_rows():
-                for cell in row:
-                    if (
-                        cell.value
-                        and isinstance(cell.value, str)
-                        and cell.value.startswith("=")
-                    ):
-                        formula_count += 1
-        wb_formulas.close()
-
-        result["total_formulas"] = formula_count
-
-        return result
-
-    except Exception as e:
-        return {"error": str(e)}
-
-
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python recalc.py <excel_file> [timeout_seconds]")
-        print("\nRecalculates all formulas in an Excel file using LibreOffice")
-        print("\nReturns JSON with error details:")
-        print("  - status: 'success' or 'errors_found'")
-        print("  - total_errors: Total number of Excel errors found")
-        print("  - total_formulas: Number of formulas in the file")
-        print("  - error_summary: Breakdown by error type with locations")
-        print("    - #VALUE!, #DIV/0!, #REF!, #NAME?, #NULL!, #NUM!, #N/A")
-        sys.exit(1)
-
-    filename = sys.argv[1]
-    timeout = int(sys.argv[2]) if len(sys.argv) > 2 else 30
-
-    result = recalc(filename, timeout)
-    print(json.dumps(result, indent=2))
-
-
-if __name__ == "__main__":
-    main()
+            raise RecalcError(stderr or "Unknown error during recalculation")

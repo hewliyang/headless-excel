@@ -11,12 +11,19 @@ from headless_excel.errors import (
     set_max_errors_displayed,
 )
 from headless_excel.formats import Colors, NumberFormats, infer_financial_color
-from headless_excel.proxy import CellProxy, RangeProxy, WorkbookProxy, WorksheetProxy
+from headless_excel.proxy import (
+    EXCEL_ERRORS,
+    CellProxy,
+    RangeProxy,
+    WorkbookProxy,
+    WorksheetProxy,
+)
 
 __all__ = [
     "CellProxy",
     "ColorLintViolation",
     "Colors",
+    "EXCEL_ERRORS",
     "ErrorDetail",
     "ExcelContext",
     "ExcelError",

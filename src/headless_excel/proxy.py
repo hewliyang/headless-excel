@@ -22,6 +22,19 @@ from openpyxl.worksheet.worksheet import Worksheet
 from headless_excel.errors import ColorLintViolation
 from headless_excel.formats import infer_financial_color
 
+# Excel error types to detect
+EXCEL_ERRORS = (
+    "#VALUE!",
+    "#DIV/0!",
+    "#REF!",
+    "#NAME?",
+    "#NULL!",
+    "#NUM!",
+    "#N/A",
+    "#SPILL!",
+    "#CALC!",
+)
+
 # Type alias for write callback
 OnWriteCallback = Callable[[], None] | None
 
@@ -178,6 +191,47 @@ class RangeProxy:
                 if isinstance(val, str) and val.startswith("="):
                     result[cell.coordinate] = val
         return result
+
+    @property
+    def formula_count(self) -> int:
+        """Count of formulas in this range.
+
+        Example:
+            >>> ws.range("A1:C3").formula_count
+            5
+        """
+        return len(self.formulas)
+
+    def find_errors(self) -> dict[str, list[str]]:
+        """Find formula errors in this range.
+
+        Scans the values (materialized after sync) for Excel error values
+        like #DIV/0!, #REF!, #NAME?, etc.
+
+        Returns:
+            Dict mapping error type to list of cell coordinates.
+            Only includes error types that have occurrences.
+
+        Example:
+            >>> ws.range("A1:C10").find_errors()
+            {'#DIV/0!': ['A3', 'B5'], '#REF!': ['C10']}
+        """
+        if self._ws._values_ws is None:
+            return {}
+
+        error_details: dict[str, list[str]] = {err: [] for err in EXCEL_ERRORS}
+
+        for row_idx in range(self._min_row, self._max_row + 1):
+            for col_idx in range(self._min_col, self._max_col + 1):
+                cell = self._ws._values_ws.cell(row_idx, col_idx)
+                if cell.value is not None and isinstance(cell.value, str):
+                    for err in EXCEL_ERRORS:
+                        if err in cell.value:
+                            error_details[err].append(cell.coordinate)
+                            break
+
+        # Filter to only include error types that have occurrences
+        return {k: v for k, v in error_details.items() if v}
 
     def dump(self, show_formulas: bool = False) -> str:
         """Print range contents as formatted table for debugging.
@@ -637,6 +691,46 @@ class WorksheetProxy:
                 ):
                     result[cell.coordinate] = cell.value
         return result
+
+    @property
+    def formula_count(self) -> int:
+        """Count of formulas in this sheet.
+
+        Example:
+            >>> sheet.formula_count
+            42
+        """
+        return len(self.formulas)
+
+    def find_errors(self) -> dict[str, list[str]]:
+        """Find formula errors in this sheet.
+
+        Scans the values worksheet (materialized values after sync) for
+        Excel error values like #DIV/0!, #REF!, #NAME?, etc.
+
+        Returns:
+            Dict mapping error type to list of cell coordinates.
+            Only includes error types that have occurrences.
+
+        Example:
+            >>> sheet.find_errors()
+            {'#DIV/0!': ['A3', 'B5'], '#REF!': ['C10']}
+        """
+        if self._values_ws is None:
+            return {}
+
+        error_details: dict[str, list[str]] = {err: [] for err in EXCEL_ERRORS}
+
+        for row in self._values_ws.iter_rows():
+            for cell in row:
+                if cell.value is not None and isinstance(cell.value, str):
+                    for err in EXCEL_ERRORS:
+                        if err in cell.value:
+                            error_details[err].append(cell.coordinate)
+                            break
+
+        # Filter to only include error types that have occurrences
+        return {k: v for k, v in error_details.items() if v}
 
     def auto_financial_colors(self) -> None:
         """Apply conventional financial modeling colors to all cells in sheet.
