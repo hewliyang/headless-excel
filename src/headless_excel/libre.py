@@ -1,10 +1,37 @@
 import os
+import shutil
 import signal
 import subprocess
+from functools import cache
 from pathlib import Path
 from sys import platform
 
-from headless_excel.errors import RecalcError
+from headless_excel.errors import LibreOfficeNotFoundError, RecalcError
+
+# Install instructions per platform
+_INSTALL_INSTRUCTIONS = {
+    "darwin": "brew install --cask libreoffice",
+    "linux": "sudo apt install libreoffice libreoffice-calc  # or dnf/pacman equivalent",
+}
+
+
+@cache
+def _libreoffice_available() -> bool:
+    """Check if LibreOffice is available (cached)."""
+    return shutil.which("soffice") is not None
+
+
+def ensure_libreoffice_installed() -> None:
+    """Check if LibreOffice is available, raise with install instructions if not."""
+    if not _libreoffice_available():
+        instructions = _INSTALL_INSTRUCTIONS.get(
+            platform, "Install LibreOffice from https://www.libreoffice.org/download/"
+        )
+        raise LibreOfficeNotFoundError(
+            f"LibreOffice is required for formula recalculation but 'soffice' was not found in PATH.\n\n"
+            f"Install it:\n  {instructions}"
+        )
+
 
 # LibreOffice macro configuration
 MACRO_MODULE_NAME = "HeadlessExcel"
@@ -141,9 +168,11 @@ def recalc(filename: str | Path, timeout: int = 30) -> None:
         timeout: Maximum time to wait for recalculation (seconds)
 
     Raises:
+        LibreOfficeNotFoundError: If LibreOffice is not installed
         RecalcError: If recalculation fails
         FileNotFoundError: If the file does not exist
     """
+    ensure_libreoffice_installed()
     filepath = Path(filename)
 
     if not filepath.exists():

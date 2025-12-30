@@ -45,6 +45,10 @@ class RecalcError(ExcelError):
     """Error during LibreOffice recalculation."""
 
 
+class LibreOfficeNotFoundError(ExcelError):
+    """LibreOffice is not installed or not in PATH."""
+
+
 class SyncError(ExcelError):
     """Error during sync operation."""
 
