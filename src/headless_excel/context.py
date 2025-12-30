@@ -15,6 +15,7 @@ from openpyxl import Workbook, load_workbook
 from headless_excel.errors import (
     ColorLintResult,
     ColorLintViolation,
+    ErrorDetail,
     ErrorScanResult,
     FormulaError,
     SyncError,
@@ -30,23 +31,6 @@ T = TypeVar("T")
 CELL_REF_PATTERN = re.compile(
     r"(?<![A-Za-z_])(?:([A-Za-z_][A-Za-z0-9_]*!)?)?\$?([A-Z]{1,3})\$?([1-9][0-9]*)(?![A-Za-z0-9_])"
 )
-
-
-@dataclass
-class ErrorDetail:
-    """Detailed information about a formula error.
-
-    Attributes:
-        location: Cell location (e.g., 'Sheet1!A1')
-        error: Error type (e.g., '#DIV/0!')
-        formula: The formula that caused the error
-        neighbors: Values of cells referenced in the formula
-    """
-
-    location: str
-    error: str
-    formula: str | None = None
-    neighbors: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

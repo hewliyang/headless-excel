@@ -1,13 +1,7 @@
-"""Exception types for exwrap."""
-
-from __future__ import annotations
+"""Exception types and result dataclasses for headless-excel."""
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from headless_excel.context import ErrorDetail
-
+from typing import Any
 
 # Global configuration for error display limits
 # This helps LLM agents by preventing context pollution from walls of errors
@@ -53,6 +47,23 @@ class RecalcError(ExcelError):
 
 class SyncError(ExcelError):
     """Error during sync operation."""
+
+
+@dataclass
+class ErrorDetail:
+    """Detailed information about a formula error.
+
+    Attributes:
+        location: Cell location (e.g., 'Sheet1!A1')
+        error: Error type (e.g., '#DIV/0!')
+        formula: The formula that caused the error
+        neighbors: Values of cells referenced in the formula
+    """
+
+    location: str
+    error: str
+    formula: str | None = None
+    neighbors: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

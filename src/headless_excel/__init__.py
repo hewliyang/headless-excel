@@ -1,8 +1,9 @@
 """headless-excel - Excel wrapper with automatic recalculation via LibreOffice."""
 
-from headless_excel.context import ErrorDetail, ExcelContext, SyncResult, create, run
+from headless_excel.context import ExcelContext, SyncResult, create, run
 from headless_excel.errors import (
     ColorLintViolation,
+    ErrorDetail,
     ExcelError,
     FormulaError,
     RecalcError,
