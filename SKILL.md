@@ -25,6 +25,8 @@ ws.range("A1:D5").dump()                  # values as table
 ws.range("A1:D5").dump(show_formulas=True) # formulas as table
 ```
 
+**⚠️ VERIFY AFTER EVERY EDIT:** Always call `print(ws.range(...).dump())` after edits or `.sync()` to sanity-check the numbers. This catches off-by-one errors, wrong cell references, and formula mistakes before they propagate. Don't skip this step.
+
 ## Creating Files
 
 ```py
