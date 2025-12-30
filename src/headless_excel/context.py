@@ -18,6 +18,7 @@ from headless_excel.errors import (
     ErrorScanResult,
     FormulaError,
     SyncError,
+    get_max_errors_displayed,
 )
 from headless_excel.libre import recalc
 from headless_excel.proxy import WorkbookProxy, WorksheetProxy
@@ -72,6 +73,47 @@ class SyncResult:
                 total=self.total_errors,
                 error_details=self.error_details,
             )
+
+    def __repr__(self) -> str:
+        """Format sync result with truncation to prevent context pollution."""
+        if self.success:
+            return "SyncResult(success=True)"
+
+        max_display = get_max_errors_displayed()
+        lines = [f"SyncResult(success=False, total_errors={self.total_errors}):"]
+        displayed = 0
+        truncated = 0
+
+        if self.error_details:
+            for detail in self.error_details:
+                if displayed >= max_display:
+                    truncated += 1
+                    continue
+                parts = [f"  {detail.location}: {detail.error}"]
+                if detail.formula:
+                    parts.append(f" formula={detail.formula}")
+                if detail.neighbors:
+                    neighbors_str = ", ".join(
+                        f"{k}={v}" for k, v in detail.neighbors.items()
+                    )
+                    parts.append(f" inputs={{{neighbors_str}}}")
+                lines.append("".join(parts))
+                displayed += 1
+        else:
+            for error_type, locations in self.errors.items():
+                for loc in locations:
+                    if displayed >= max_display:
+                        truncated += 1
+                        continue
+                    lines.append(f"  {error_type}: {loc}")
+                    displayed += 1
+
+        if truncated > 0:
+            lines.append(f"  ... and {truncated} more error(s) (truncated)")
+
+        return "\n".join(lines)
+
+    __str__ = __repr__
 
 
 class ExcelContext:

@@ -44,9 +44,9 @@ with run("model.xlsx") as ctx:
 
 ## API
 
-### `create(path, overwrite=False, auto_sync=True, raise_on_errors=True, lint_financial_colors=True)`
+### `create(path, overwrite=False, auto_sync=True, raise_on_errors=True, lint_financial_colors=True, auto_financial_colors=True)`
 
-Create a new Excel file. By default, lints financial color conventions on exit.
+Create a new Excel file. By default, auto-applies and lints financial color conventions on exit.
 
 ```python
 from headless_excel import create
@@ -61,9 +61,9 @@ with create("existing.xlsx", overwrite=True) as ctx:
     ctx.active["A1"] = "Fresh start"
 ```
 
-### `run(path, auto_sync=True, raise_on_errors=True, lint_financial_colors=True)`
+### `run(path, auto_sync=True, raise_on_errors=True, lint_financial_colors=True, auto_financial_colors=True)`
 
-Open an existing Excel file. Similar to OfficeJS `Excel.run()`. By default, lints financial color conventions on exit.
+Open an existing Excel file. Similar to OfficeJS `Excel.run()`. By default, auto-applies and lints financial color conventions on exit.
 
 ```python
 from headless_excel import run
@@ -153,15 +153,19 @@ with create("model.xlsx") as ctx:
     ws["A1"].formula  # "=B1+C1"
     ws["B1"].formula  # None (not a formula)
 
-    # Debug: dump range contents as formatted table
-    ws.range("A1:C3").dump()
+    # Debug: dump range contents as formatted table (returns string)
+    print(ws.range("A1:C3").dump())
     # |   A |   B |       C |
     # |-----|-----|---------|
     # |  10 |  20 |      30 |
     # |  30 |  40 |      70 |
     # |  50 |  60 |     100 |
 
-    ws.range("A1:C3").dump(show_formulas=True)  # Show formulas instead of values
+    print(ws.range("A1:C3").dump(show_formulas=True))  # Show formulas instead of values
+
+    # Count formulas
+    ws.formula_count          # number of formulas in sheet
+    ws.range("A1:C3").formula_count  # number of formulas in range
 ```
 
 #### Range Styling
@@ -202,6 +206,24 @@ for detail in result.error_details:
     detail.error      # '#DIV/0!'
     detail.formula    # '=B1/C1'
     detail.neighbors  # {'Sheet1!B1': 100, 'Sheet1!C1': 0}
+```
+
+### Error Scanning
+
+Find formula errors at any level without triggering sync:
+
+```python
+with run("model.xlsx") as ctx:
+    # After sync, scan for errors in materialized values
+    errors = ctx.find_errors()                    # whole workbook
+    errors = ctx.active.find_errors()             # single sheet
+    errors = ctx.active.range("A1:D10").find_errors()  # specific range
+
+    # ErrorScanResult has a nice __repr__ for agents
+    print(errors)
+    # Formula errors (3):
+    #   #DIV/0!: Sheet1!A3, Sheet1!B5
+    #   #REF!: Sheet1!C10
 ```
 
 ### Number Formatting & Colors
@@ -251,9 +273,9 @@ infer_financial_color(100)           # Colors.HARDCODE (blue)
 infer_financial_color("=A1+B1")      # Colors.FORMULA (black)
 infer_financial_color("=Sheet2!A1")  # Colors.EXTERNAL_LINK (green)
 
-# Auto-apply colors based on cell content
-# Note: lint_financial_colors=False to avoid auto-lint on exit for this example
-with create("model.xlsx", lint_financial_colors=False) as ctx:
+# Manual auto-apply (for when you want control over timing)
+# Note: disabling both to show manual usage
+with create("model.xlsx", auto_financial_colors=False, lint_financial_colors=False) as ctx:
     ws = ctx.active
     ws["A1"] = 100
     ws["A2"] = "=A1*2"
@@ -273,11 +295,19 @@ with run("model.xlsx", lint_financial_colors=False) as ctx:
     # Check specific range
     violations = ctx.active.range("A1:D10").lint_financial_colors()
 
-    # Check entire workbook
-    violations = ctx.lint_financial_colors()
-    for sheet, sheet_violations in violations.items():
+    # Check entire workbook - returns ColorLintResult
+    result = ctx.lint_financial_colors()
+
+    # ColorLintResult has a nice __repr__ for agents
+    print(result)
+    # Color violations (2):
+    #   Sheet1! need HARDCODE (blue): A1, B2
+    #   Sheet1! need FORMULA (black): C3
+
+    # Dict-like access for backwards compatibility
+    for sheet, sheet_violations in result.items():
         for v in sheet_violations:
-            print(f"{sheet}!{v.cell}: expected {v.expected_color}, got {v.current_color}")
+            print(f"{sheet}!{v.cell}: expected {v.expected_color}")
 
 # Financial color linting is enabled by default and logs warnings on violations
 # To disable it:

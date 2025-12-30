@@ -97,15 +97,15 @@ from headless_excel import run
 
 with run("model.xlsx") as ctx:
     ctx.sync()
-    # Print range as formatted table
-    ctx.active.range("A1:D5").dump()
+    # Print range as formatted table (dump returns string, use print())
+    print(ctx.active.range("A1:D5").dump())
     # |   A |   B |   C |   D |
     # |-----|-----|-----|-----|
     # | 100 | 200 | 300 | 600 |
     # ...
 
     # Show formulas instead of values
-    ctx.active.range("A1:D5").dump(show_formulas=True)
+    print(ctx.active.range("A1:D5").dump(show_formulas=True))
 ```
 
 ## Bulk Read/Write with Ranges
@@ -143,7 +143,7 @@ ws['A1'].font = Font(color=Colors.EXTERNAL_LINK) # Green for links
 
 ## Auto-Apply Financial Colors
 
-Use `auto_financial_colors=True` in `create()`/`run()` to automatically apply correct colors (hardcode=blue, formula=black, external link=green) on save:
+Use `auto_financial_colors=True` (default) in `create()`/`run()` to automatically apply correct colors (hardcode=blue, formula=black, external link=green) on save:
 
 ```python
 with create("model.xlsx", auto_financial_colors=True) as ctx:
@@ -155,7 +155,7 @@ with run("existing.xlsx", auto_financial_colors=True) as ctx:
     # colors applied automatically on exit
 ```
 
-Always combine with `lint_financial_colors=True` to enforce conventions. These are true by default even if you do not pass them in.
+Always combine with `lint_financial_colors=True` (also default) to enforce conventions and log warnings on violations.
 
 ## Error Handling
 
@@ -167,29 +167,20 @@ try:
         ctx.active['A1'] = '=INVALID_REF'
 except FormulaError as e:
     print(e.errors)  # {'#NAME?': ['Sheet1!A1']}
-EOF
 
 # Manual error handling
-uv run python <<'EOF'
-from headless_excel import run
-
 with run("model.xlsx", auto_sync=False) as ctx:
     ctx.active['A1'] = '=B1/C1'
     result = ctx.sync()
     if not result.success:
         for d in result.error_details:
             print(f"{d.error} at {d.location}: {d.formula}, refs: {d.neighbors}")
+
 ```
-
-## Common Pitfalls
-
-- Column mapping: column 64 = BL, not BK
-- Division by zero: check denominators (#DIV/0!)
-- Cross-sheet refs: use `Sheet1!A1` format
 
 ## Styling Preferences in Finance
 
-- Always use `auto_financial_colors=True` and `lint_financial_colors=True` in `create()`/`run()`
+- Both `auto_financial_colors=True` and `lint_financial_colors=True` are enabled by default in `create()`/`run()`
 - Minimal fills, use built-in constants for coloring hardcodes, cross-sheet links. Red for checks.
 - No 4-sided boxes—only use borders for vertical/horizontal separation of sections (e.g., historical vs projected years)
 - Appropriate widths so data is readable out of the box—must be client-ready
