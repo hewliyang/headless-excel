@@ -142,7 +142,6 @@ class ExcelContext:
         self._dirty = False
         self._is_new_workbook = create
         self._first_sheet_created = False
-        self._last_sync_result: SyncResult | None = None
 
         if create:
             self._workbook = Workbook()
@@ -337,9 +336,6 @@ class ExcelContext:
             errors=error_scan.errors_by_type,
             error_details=error_details,
         )
-
-        # Store result for checking on context exit
-        self._last_sync_result = sync_result
 
         if raise_on_errors:
             sync_result.raise_on_errors()
@@ -556,19 +552,6 @@ def _run_context(
                 )
                 # hack to suppress traceback to reduce context pollution
                 raise SystemExit(str(err))
-        elif (
-            raise_on_errors
-            and ctx._last_sync_result
-            and not ctx._last_sync_result.success
-        ):
-            # No new writes, but a previous manual sync had errors
-            err = FormulaError(
-                errors=ctx._last_sync_result.errors,
-                total=ctx._last_sync_result.total_errors,
-                error_details=ctx._last_sync_result.error_details,
-            )
-            raise SystemExit(str(err))
-
         # Check financial color conventions if requested
         if lint_financial_colors:
             violations = ctx.lint_financial_colors()

@@ -160,22 +160,18 @@ Always combine with `lint_financial_colors=True` (also default) to enforce conve
 ## Error Handling
 
 ```py
-from headless_excel import create, FormulaError
+from headless_excel import create
 
-try:
-    with create("model.xlsx") as ctx:
-        ctx.active['A1'] = '=INVALID_REF'
-except FormulaError as e:
-    print(e.errors)  # {'#NAME?': ['Sheet1!A1']}
-
-# Manual error handling
-with run("model.xlsx", auto_sync=False) as ctx:
+with create("model.xlsx") as ctx:
     ctx.active['A1'] = '=B1/C1'
-    result = ctx.sync()
-    if not result.success:
-        for d in result.error_details:
-            print(f"{d.error} at {d.location}: {d.formula}, refs: {d.neighbors}")
+    ctx.active['B1'] = 10
+    ctx.active['C1'] = 0  # Division by zero!
 
+    # Just print the sync result - shows errors with context
+    # Note: if manually syncing - context manager will not raise on exit
+    print(ctx.sync())
+    # SyncResult(success=False, total_errors=1):
+    #   Sheet!A1: #DIV/0! formula==B1/C1 inputs={Sheet!B1=10, Sheet!C1=0}
 ```
 
 ## Styling Preferences in Finance

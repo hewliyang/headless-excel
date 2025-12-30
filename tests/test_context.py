@@ -132,22 +132,24 @@ class TestCreate:
         with run(path) as ctx:
             assert ctx.active["A1"].value == "Replaced"  # type: ignore[union-attr]
 
-    def test_create_raise_on_errors_with_manual_sync(self, tmp_path: Path):
-        """Test that raise_on_errors in create() works even after manual sync."""
+    def test_create_manual_sync_does_not_raise_on_exit(self, tmp_path: Path):
+        """Test that manual sync means user handles errors - no auto-raise on exit.
+
+        This prevents duplicate error output when user prints the SyncResult
+        and raise_on_errors=True is set on the context manager.
+        """
         path = tmp_path / "test.xlsx"
 
-        with pytest.raises(SystemExit) as exc_info:
-            with create(path, raise_on_errors=True) as ctx:
-                ws = ctx.active
-                ws["A1"] = 100
-                ws["A2"] = "=A1+Sheet2!A1"
+        # Should NOT raise - user manually synced, so they're handling errors
+        with create(path, raise_on_errors=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = 100
+            ws["A2"] = "=A1+Sheet2!A1"
 
-                result = ctx.sync(raise_on_errors=False)
-                assert not result.success
-                assert result.total_errors == 1
-
-        assert "Formula errors" in str(exc_info.value)
-        assert "#NAME?" in str(exc_info.value)
+            result = ctx.sync(raise_on_errors=False)
+            assert not result.success
+            assert result.total_errors == 1
+            # User saw the errors, they handle it - no SystemExit on exit
 
     def test_create_raise_on_errors_without_manual_sync(self, tmp_path: Path):
         """Test that raise_on_errors in create() works with auto_sync."""
