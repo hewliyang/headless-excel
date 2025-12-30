@@ -21,3 +21,27 @@ uv run pytest -v
 ```
 
 Tests are located in the `tests/` directory.
+
+## Linting
+
+```bash
+uv run ruff check
+```
+
+To auto-fix issues:
+
+```bash
+uv run ruff check --fix
+```
+
+## Formatting
+
+```bash
+uv run ruff format
+```
+
+## Type Checking
+
+```bash
+uv run ty check
+```

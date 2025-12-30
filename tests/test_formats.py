@@ -275,9 +275,9 @@ class TestLintFinancialColors:
             ws = ctx.active
             ws["A1"] = 100  # Should be blue, but no color set
             ws["A2"] = "=A1*2"
-            ws["A2"].font = Font(
+            ws["A2"].font = Font(  # type: ignore[invalid-assignment]
                 color=Colors.HARDCODE
-            )  # Wrong: should be black  # type: ignore[union-attr]
+            )  # Wrong: should be black
 
             violations = ws.range("A1:A2").lint_financial_colors()
             assert len(violations) == 2
@@ -314,7 +314,12 @@ class TestLintFinancialColors:
 
         path = tmp_path / "test.xlsx"
         with caplog.at_level(logging.WARNING):
-            with create(path, auto_sync=False, lint_financial_colors=True, auto_financial_colors=False) as ctx:
+            with create(
+                path,
+                auto_sync=False,
+                lint_financial_colors=True,
+                auto_financial_colors=False,
+            ) as ctx:
                 ctx.active["A1"] = 100  # Violation: no color
 
         assert "Color violations" in caplog.text
@@ -451,7 +456,11 @@ class TestErrorTruncation:
             assert "Formula errors (10)" in s
 
             # Should only show first 3 total
-            error_lines = [line for line in s.split("\n") if line.startswith("  ") and "truncated" not in line]
+            error_lines = [
+                line
+                for line in s.split("\n")
+                if line.startswith("  ") and "truncated" not in line
+            ]
             assert len(error_lines) == 3
 
             # Should show truncation message
@@ -569,7 +578,6 @@ class TestErrorTruncation:
     def test_sync_result_repr_truncated(self):
         """SyncResult.__repr__ should truncate beyond max_errors_displayed."""
         from headless_excel import (
-            ErrorDetail,
             SyncResult,
             get_max_errors_displayed,
             set_max_errors_displayed,
@@ -594,7 +602,11 @@ class TestErrorTruncation:
             assert "total_errors=10" in s
 
             # Should only show first 3 total
-            error_lines = [line for line in s.split("\n") if line.startswith("  ") and "truncated" not in line]
+            error_lines = [
+                line
+                for line in s.split("\n")
+                if line.startswith("  ") and "truncated" not in line
+            ]
             assert len(error_lines) == 3
 
             # Should show truncation message

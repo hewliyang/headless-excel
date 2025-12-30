@@ -88,8 +88,7 @@ class FormulaError(ExcelError):
                     parts.append(f" formula={detail.formula}")
                 if detail.neighbors:
                     neighbors_str = ", ".join(
-                        f"{k}={_format_value(v)}"
-                        for k, v in detail.neighbors.items()
+                        f"{k}={_format_value(v)}" for k, v in detail.neighbors.items()
                     )
                     parts.append(f" inputs={{{neighbors_str}}}")
                 lines.append("".join(parts))
