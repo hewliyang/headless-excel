@@ -13,10 +13,11 @@ from typing import Any, TypeVar
 from openpyxl import Workbook, load_workbook
 
 from headless_excel.errors import (
+    ColorLintResult,
     ColorLintViolation,
+    ErrorScanResult,
     FormulaError,
     SyncError,
-    format_color_violations,
 )
 from headless_excel.proxy import WorkbookProxy, WorksheetProxy
 from headless_excel.recalc import recalc
@@ -301,14 +302,13 @@ class ExcelContext:
         self._dirty = False
 
         # Scrape for formula errors
-        errors = self.find_errors()
-        total_errors = sum(len(locs) for locs in errors.values())
-        error_details = self._build_error_details(errors)
+        error_scan = self.find_errors()
+        error_details = self._build_error_details(error_scan.errors_by_type)
 
         sync_result = SyncResult(
-            success=total_errors == 0,
-            total_errors=total_errors,
-            errors=errors,
+            success=error_scan.total_errors == 0,
+            total_errors=error_scan.total_errors,
+            errors=error_scan.errors_by_type,
             error_details=error_details,
         )
 
@@ -321,36 +321,40 @@ class ExcelContext:
         logger.info("Sync successful, changes saved")
         return sync_result
 
-    def find_errors(self) -> dict[str, list[str]]:
+    def find_errors(self) -> ErrorScanResult:
         """Find formula errors across all sheets.
 
         Scans all worksheets for Excel error values like #DIV/0!, #REF!, etc.
 
         Returns:
-            Dict mapping error type to list of fully-qualified locations
-            (e.g., 'Sheet1!A3'). Only includes error types with occurrences.
+            ErrorScanResult with errors organized by type and total count.
+            Has a nice __repr__ with truncation for agent-friendly output.
 
         Example:
-            >>> ctx.find_errors()
-            {'#DIV/0!': ['Sheet1!A3', 'Sheet2!B5'], '#REF!': ['Sheet1!C10']}
+            >>> result = ctx.find_errors()
+            >>> print(result)
+            Formula errors (2):
+              #DIV/0!: Sheet1!A3
+              #REF!: Sheet1!C10
         """
         if self._proxy is None:
-            return {}
+            return ErrorScanResult()
 
         all_errors: dict[str, list[str]] = {}
 
         for ws_proxy in self._proxy.worksheets:
             sheet_errors = ws_proxy.find_errors()
-            for err_type, locations in sheet_errors.items():
+            for err_type, locations in sheet_errors.errors_by_type.items():
                 qualified = [f"{ws_proxy.title}!{loc}" for loc in locations]
                 if err_type in all_errors:
                     all_errors[err_type].extend(qualified)
                 else:
                     all_errors[err_type] = qualified
 
-        return all_errors
+        total = sum(len(locs) for locs in all_errors.values())
+        return ErrorScanResult(errors_by_type=all_errors, total_errors=total)
 
-    def lint_financial_colors(self) -> dict[str, list[ColorLintViolation]]:
+    def lint_financial_colors(self) -> ColorLintResult:
         """Check all sheets for financial color convention violations.
 
         Financial modeling conventions:
@@ -359,13 +363,15 @@ class ExcelContext:
         - Green (EXTERNAL_LINK): Formulas with sheet references
 
         Returns:
-            Dict mapping sheet names to list of ColorLintViolation objects
+            ColorLintResult with violations organized by sheet and total count.
+            Has a nice __repr__ with truncation for agent-friendly output.
 
         Example:
-            violations = ctx.lint_financial_colors()
-            for sheet, sheet_violations in violations.items():
-                for v in sheet_violations:
-                    print(f"{sheet}!{v.cell}: expected {v.expected_color}")
+            >>> result = ctx.lint_financial_colors()
+            >>> print(result)
+            Color violations (2):
+              Sheet1! need HARDCODE (blue): A1
+              Sheet1! need FORMULA (black): A2
         """
         if self._workbook is None:
             raise RuntimeError("Context not initialized")
@@ -377,7 +383,10 @@ class ExcelContext:
             if sheet_violations:
                 all_violations[ws_proxy.title] = sheet_violations
 
-        return all_violations
+        total = sum(len(v) for v in all_violations.values())
+        return ColorLintResult(
+            violations_by_sheet=all_violations, total_violations=total
+        )
 
     def auto_financial_colors(self) -> None:
         """Apply conventional financial modeling colors to all cells in all sheets.
@@ -538,7 +547,7 @@ def _run_context(
         if lint_financial_colors:
             violations = ctx.lint_financial_colors()
             if violations:
-                logger.warning(format_color_violations(violations))
+                logger.warning(str(violations))
     finally:
         ctx.close()
 

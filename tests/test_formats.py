@@ -317,7 +317,7 @@ class TestLintFinancialColors:
             with create(path, auto_sync=False, lint_financial_colors=True, auto_financial_colors=False) as ctx:
                 ctx.active["A1"] = 100  # Violation: no color
 
-        assert "Financial color violations" in caplog.text
+        assert "Color violations" in caplog.text
 
     def test_lint_passes_with_correct_colors(self, tmp_path: Path):
         """lint_financial_colors=True should pass when colors are correct."""
@@ -329,36 +329,6 @@ class TestLintFinancialColors:
             ws["A2"] = "=A1*2"
             ws["A2"].font = Font(color=Colors.FORMULA)  # type: ignore[union-attr]
             # Should not raise
-
-
-class TestFormatColorViolations:
-    """Test format_color_violations function."""
-
-    def test_format_violations(self):
-        """format_color_violations should produce useful string representation."""
-        from headless_excel.errors import format_color_violations
-
-        violations = {
-            "Sheet1": [
-                ColorLintViolation(
-                    cell="A1",
-                    value=100,
-                    expected_color=Colors.HARDCODE,
-                    current_color=None,
-                )
-            ]
-        }
-        s = format_color_violations(violations)
-        assert "Financial color violations (1)" in s
-        assert "Sheet1!A1" in s
-        assert "HARDCODE" in s
-
-    def test_format_empty(self):
-        """Empty violations should report no violations."""
-        from headless_excel.errors import format_color_violations
-
-        s = format_color_violations({})
-        assert s == "No color lint violations"
 
 
 class TestErrorTruncation:
@@ -381,75 +351,77 @@ class TestErrorTruncation:
             set_max_errors_displayed(original)
 
     def test_color_violations_truncated(self):
-        """format_color_violations should truncate beyond max_errors_displayed."""
+        """ColorLintResult should truncate beyond max_errors_displayed."""
         from headless_excel import get_max_errors_displayed, set_max_errors_displayed
-        from headless_excel.errors import format_color_violations
+        from headless_excel.errors import ColorLintResult
 
         original = get_max_errors_displayed()
         try:
             set_max_errors_displayed(3)
 
             # Create 10 violations
-            violations = {
-                "Sheet1": [
-                    ColorLintViolation(
-                        cell=f"A{i}",
-                        value=i * 100,
-                        expected_color=Colors.HARDCODE,
-                        current_color=None,
-                    )
-                    for i in range(1, 11)
-                ]
-            }
-            s = format_color_violations(violations)
+            violations = [
+                ColorLintViolation(
+                    cell=f"A{i}",
+                    value=i * 100,
+                    expected_color=Colors.HARDCODE,
+                    current_color=None,
+                )
+                for i in range(1, 11)
+            ]
+            result = ColorLintResult(
+                violations_by_sheet={"Sheet1": violations}, total_violations=10
+            )
+            s = str(result)
 
             # Should show total count
-            assert "Financial color violations (10)" in s
+            assert "Color violations (10)" in s
 
-            # Should show first 3
-            assert "Sheet1!A1" in s
-            assert "Sheet1!A2" in s
-            assert "Sheet1!A3" in s
+            # Should show first 3 (grouped on one line)
+            assert "A1" in s
+            assert "A2" in s
+            assert "A3" in s
 
             # Should NOT show beyond limit
-            assert "Sheet1!A4" not in s
-            assert "Sheet1!A10" not in s
+            assert "A4" not in s
+            assert "A10" not in s
 
             # Should show truncation message
-            assert "... and 7 more violation(s) (truncated)" in s
+            assert "+7 more" in s
         finally:
             set_max_errors_displayed(original)
 
     def test_color_violations_not_truncated_when_under_limit(self):
-        """format_color_violations should not truncate when under limit."""
+        """ColorLintResult should not truncate when under limit."""
         from headless_excel import get_max_errors_displayed, set_max_errors_displayed
-        from headless_excel.errors import format_color_violations
+        from headless_excel.errors import ColorLintResult
 
         original = get_max_errors_displayed()
         try:
             set_max_errors_displayed(10)
 
             # Create 5 violations (under limit)
-            violations = {
-                "Sheet1": [
-                    ColorLintViolation(
-                        cell=f"A{i}",
-                        value=i * 100,
-                        expected_color=Colors.HARDCODE,
-                        current_color=None,
-                    )
-                    for i in range(1, 6)
-                ]
-            }
-            s = format_color_violations(violations)
+            violations = [
+                ColorLintViolation(
+                    cell=f"A{i}",
+                    value=i * 100,
+                    expected_color=Colors.HARDCODE,
+                    current_color=None,
+                )
+                for i in range(1, 6)
+            ]
+            result = ColorLintResult(
+                violations_by_sheet={"Sheet1": violations}, total_violations=5
+            )
+            s = str(result)
 
-            # Should show all 5
-            assert "Financial color violations (5)" in s
-            assert "Sheet1!A1" in s
-            assert "Sheet1!A5" in s
+            # Should show all 5 (grouped on one line)
+            assert "Color violations (5)" in s
+            assert "A1" in s
+            assert "A5" in s
 
             # Should NOT show truncation message
-            assert "truncated" not in s
+            assert "more" not in s
         finally:
             set_max_errors_displayed(original)
 

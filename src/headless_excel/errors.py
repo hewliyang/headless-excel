@@ -19,7 +19,7 @@ def set_max_errors_displayed(limit: int) -> None:
 
     This is a global setting that affects:
     - FormulaError.__str__() and __repr__()
-    - format_color_violations()
+
 
     Useful for LLM agents with limited context windows.
 
@@ -141,46 +141,148 @@ class ColorLintViolation:
     current_color: str | None
 
 
-def format_color_violations(
-    violations: dict[str, list[ColorLintViolation]],
-) -> str:
-    """Format color lint violations as a human-readable string.
+@dataclass
+class ColorLintResult:
+    """Result of linting financial colors across sheets.
 
-    Respects the global max_errors_displayed limit to prevent
-    context pollution for LLM agents.
-
-    Args:
-        violations: Dict mapping sheet names to list of violations
-
-    Returns:
-        Formatted string describing all violations (truncated if needed)
+    Attributes:
+        violations_by_sheet: Dict mapping sheet names to list of violations
+        total_violations: Total count of violations across all sheets
     """
-    if not violations:
-        return "No color lint violations"
 
-    total = sum(len(v) for v in violations.values())
-    max_display = get_max_errors_displayed()
-    lines = [f"Financial color violations ({total}):"]
-    displayed = 0
-    truncated = 0
+    violations_by_sheet: dict[str, list[ColorLintViolation]] = field(
+        default_factory=dict
+    )
+    total_violations: int = 0
 
-    for sheet_name, sheet_violations in violations.items():
-        for v in sheet_violations:
-            if displayed >= max_display:
-                truncated += 1
-                continue
-            expected = _color_name(v.expected_color)
-            current = _color_name(v.current_color) if v.current_color else "none"
-            val_str = _format_value(v.value)
-            lines.append(
-                f"  {sheet_name}!{v.cell}: expected {expected}, got {current} (value={val_str})"
-            )
-            displayed += 1
+    def __bool__(self) -> bool:
+        """Return True if there are violations."""
+        return self.total_violations > 0
 
-    if truncated > 0:
-        lines.append(f"  ... and {truncated} more violation(s) (truncated)")
+    def __len__(self) -> int:
+        """Return number of sheets with violations."""
+        return len(self.violations_by_sheet)
 
-    return "\n".join(lines)
+    def __contains__(self, sheet_name: str) -> bool:
+        """Check if a sheet has violations."""
+        return sheet_name in self.violations_by_sheet
+
+    def __getitem__(self, sheet_name: str) -> list[ColorLintViolation]:
+        """Get violations for a specific sheet."""
+        return self.violations_by_sheet[sheet_name]
+
+    def __iter__(self):
+        """Iterate over sheet names."""
+        return iter(self.violations_by_sheet)
+
+    def items(self):
+        """Iterate over (sheet_name, violations) pairs."""
+        return self.violations_by_sheet.items()
+
+    def __repr__(self) -> str:
+        """Format violations with truncation to prevent context pollution."""
+        if not self.violations_by_sheet:
+            return "No color lint violations"
+
+        max_display = get_max_errors_displayed()
+        lines = [f"Color violations ({self.total_violations}):"]
+        displayed = 0
+        truncated = 0
+
+        for sheet_name, sheet_violations in self.violations_by_sheet.items():
+            # Group by expected color for token efficiency
+            by_expected: dict[str, list[str]] = {}
+            for v in sheet_violations:
+                if displayed >= max_display:
+                    truncated += 1
+                    continue
+                expected = _color_name(v.expected_color)
+                if expected not in by_expected:
+                    by_expected[expected] = []
+                by_expected[expected].append(v.cell)
+                displayed += 1
+
+            for expected, cells in by_expected.items():
+                lines.append(f"  {sheet_name}! need {expected}: {', '.join(cells)}")
+
+        if truncated > 0:
+            lines.append(f"  ... +{truncated} more")
+
+        return "\n".join(lines)
+
+    __str__ = __repr__
+
+
+@dataclass
+class ErrorScanResult:
+    """Result of scanning for formula errors.
+
+    Attributes:
+        errors_by_type: Dict mapping error type (e.g., '#DIV/0!') to list of locations
+        total_errors: Total count of errors across all types
+    """
+
+    errors_by_type: dict[str, list[str]] = field(default_factory=dict)
+    total_errors: int = 0
+
+    def __bool__(self) -> bool:
+        """Return True if there are errors."""
+        return self.total_errors > 0
+
+    def __len__(self) -> int:
+        """Return number of error types found."""
+        return len(self.errors_by_type)
+
+    def __contains__(self, error_type: str) -> bool:
+        """Check if an error type exists."""
+        return error_type in self.errors_by_type
+
+    def __getitem__(self, error_type: str) -> list[str]:
+        """Get locations for a specific error type."""
+        return self.errors_by_type[error_type]
+
+    def __iter__(self):
+        """Iterate over error types."""
+        return iter(self.errors_by_type)
+
+    def items(self):
+        """Iterate over (error_type, locations) pairs."""
+        return self.errors_by_type.items()
+
+    def __eq__(self, other):
+        """Allow comparison with empty dict for backwards compatibility."""
+        if isinstance(other, dict):
+            return self.errors_by_type == other
+        return super().__eq__(other)
+
+    def __repr__(self) -> str:
+        """Format errors with truncation to prevent context pollution."""
+        if not self.errors_by_type:
+            return "No formula errors"
+
+        max_display = get_max_errors_displayed()
+        lines = [f"Formula errors ({self.total_errors}):"]
+        displayed = 0
+        truncated = 0
+
+        for error_type, locations in self.errors_by_type.items():
+            # Group locations per error type for token efficiency
+            shown_locs = []
+            for loc in locations:
+                if displayed >= max_display:
+                    truncated += 1
+                else:
+                    shown_locs.append(loc)
+                    displayed += 1
+            if shown_locs:
+                lines.append(f"  {error_type}: {', '.join(shown_locs)}")
+
+        if truncated > 0:
+            lines.append(f"  ... +{truncated} more")
+
+        return "\n".join(lines)
+
+    __str__ = __repr__
 
 
 def _color_name(color_code: str | None) -> str:

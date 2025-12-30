@@ -19,7 +19,7 @@ from openpyxl.utils import column_index_from_string
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
-from headless_excel.errors import ColorLintViolation
+from headless_excel.errors import ColorLintViolation, ErrorScanResult
 from headless_excel.formats import infer_financial_color
 
 # Excel error types to detect
@@ -202,22 +202,25 @@ class RangeProxy:
         """
         return len(self.formulas)
 
-    def find_errors(self) -> dict[str, list[str]]:
+    def find_errors(self) -> ErrorScanResult:
         """Find formula errors in this range.
 
         Scans the values (materialized after sync) for Excel error values
         like #DIV/0!, #REF!, #NAME?, etc.
 
         Returns:
-            Dict mapping error type to list of cell coordinates.
-            Only includes error types that have occurrences.
+            ErrorScanResult with errors organized by type and total count.
+            Has a nice __repr__ with truncation for agent-friendly output.
 
         Example:
-            >>> ws.range("A1:C10").find_errors()
-            {'#DIV/0!': ['A3', 'B5'], '#REF!': ['C10']}
+            >>> result = ws.range("A1:C10").find_errors()
+            >>> print(result)
+            Formula errors (3):
+              #DIV/0!: A3, B5
+              #REF!: C10
         """
         if self._ws._values_ws is None:
-            return {}
+            return ErrorScanResult()
 
         error_details: dict[str, list[str]] = {err: [] for err in EXCEL_ERRORS}
 
@@ -231,7 +234,9 @@ class RangeProxy:
                             break
 
         # Filter to only include error types that have occurrences
-        return {k: v for k, v in error_details.items() if v}
+        errors_by_type = {k: v for k, v in error_details.items() if v}
+        total = sum(len(locs) for locs in errors_by_type.values())
+        return ErrorScanResult(errors_by_type=errors_by_type, total_errors=total)
 
     def dump(self, show_formulas: bool = False) -> str:
         """Print range contents as formatted table for debugging.
@@ -316,7 +321,6 @@ class RangeProxy:
             lines.append("|" + "|".join(row_strs) + "|")
 
         result = "\n".join(lines)
-        print(result)
         return result
 
     def apply_style(
@@ -702,22 +706,25 @@ class WorksheetProxy:
         """
         return len(self.formulas)
 
-    def find_errors(self) -> dict[str, list[str]]:
+    def find_errors(self) -> ErrorScanResult:
         """Find formula errors in this sheet.
 
         Scans the values worksheet (materialized values after sync) for
         Excel error values like #DIV/0!, #REF!, #NAME?, etc.
 
         Returns:
-            Dict mapping error type to list of cell coordinates.
-            Only includes error types that have occurrences.
+            ErrorScanResult with errors organized by type and total count.
+            Has a nice __repr__ with truncation for agent-friendly output.
 
         Example:
-            >>> sheet.find_errors()
-            {'#DIV/0!': ['A3', 'B5'], '#REF!': ['C10']}
+            >>> result = sheet.find_errors()
+            >>> print(result)
+            Formula errors (3):
+              #DIV/0!: A3, B5
+              #REF!: C10
         """
         if self._values_ws is None:
-            return {}
+            return ErrorScanResult()
 
         error_details: dict[str, list[str]] = {err: [] for err in EXCEL_ERRORS}
 
@@ -730,7 +737,9 @@ class WorksheetProxy:
                             break
 
         # Filter to only include error types that have occurrences
-        return {k: v for k, v in error_details.items() if v}
+        errors_by_type = {k: v for k, v in error_details.items() if v}
+        total = sum(len(locs) for locs in errors_by_type.values())
+        return ErrorScanResult(errors_by_type=errors_by_type, total_errors=total)
 
     def auto_financial_colors(self) -> None:
         """Apply conventional financial modeling colors to all cells in sheet.
