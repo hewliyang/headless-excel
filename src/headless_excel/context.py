@@ -19,8 +19,8 @@ from headless_excel.errors import (
     FormulaError,
     SyncError,
 )
+from headless_excel.libre import recalc
 from headless_excel.proxy import WorkbookProxy, WorksheetProxy
-from headless_excel.recalc import recalc
 
 logger = logging.getLogger(__name__)
 
