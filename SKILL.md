@@ -1,6 +1,6 @@
 ---
 name: xlsx
-description: "Spreadsheet creation, editing, and analysis. Use when working with .xlsx/.xlsm/.csv/.tsv files."
+description: "Creating & editing with Excel workbooks"
 ---
 
 # headless-excel
