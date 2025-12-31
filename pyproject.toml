@@ -1,7 +1,7 @@
 [project]
 name = "headless-excel"
 version = "0.1.0"
-description = "Excel automation tool for headless environments"
+description = "Excel automation tool for agents inheadless environments"
 readme = "README.md"
 authors = [{ name = "Hew Li Yang", email = "hewliyang@u.nus.edu" }]
 requires-python = ">=3.10"
