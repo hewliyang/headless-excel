@@ -79,7 +79,7 @@ def _get_macro_file() -> Path:
 
 def _get_macro_uri() -> str:
     """Get the URI to call the macro."""
-    return f"vnd.sun.star.script:Standard.{MACRO_MODULE_NAME}.{MACRO_SUB_NAME}?language=Basic&location=application"
+    return f"macro:///Standard.{MACRO_MODULE_NAME}.{MACRO_SUB_NAME}"
 
 
 def _run_soffice(cmd: list[str], timeout: int) -> tuple[int, str]:
