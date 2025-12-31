@@ -194,7 +194,7 @@ def recalc(filename: str | Path, timeout: int = 30) -> None:
     returncode, stderr = _run_soffice(cmd, timeout=timeout)
 
     if returncode != 0:
-        if MACRO_MODULE_NAME in stderr or MACRO_SUB_NAME not in stderr:
+        if MACRO_MODULE_NAME in stderr and MACRO_SUB_NAME not in stderr:
             raise RecalcError("LibreOffice macro not configured properly")
         else:
             raise RecalcError(stderr or "Unknown error during recalculation")

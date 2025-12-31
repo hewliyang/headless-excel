@@ -239,7 +239,7 @@ class ExcelContext:
         if self._proxy is not None and name in self._proxy._sheet_cache:
             del self._proxy._sheet_cache[name]
 
-    def create_sheet(self, name: str, index: int | None = None) -> WorksheetProxy:
+    def create_sheet(self, title: str, index: int | None = None) -> WorksheetProxy:
         """Create a new worksheet.
 
         Note: When creating a new workbook, the default empty "Sheet" is
@@ -276,7 +276,7 @@ class ExcelContext:
                     if is_empty:
                         self._workbook.remove(default_sheet)
 
-        return self.workbook.create_sheet(name, index)
+        return self.workbook.create_sheet(title, index)
 
     def sync(self, raise_on_errors: bool = False) -> SyncResult:
         """Save, recalculate via LibreOffice, and reload with materialized values.

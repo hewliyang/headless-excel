@@ -38,7 +38,7 @@ def get_max_errors_displayed() -> int:
 
 
 class ExcelError(Exception):
-    """Base exception for exwrap errors."""
+    """Base exception for headless-excel errors."""
 
 
 class RecalcError(ExcelError):
