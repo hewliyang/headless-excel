@@ -1,7 +1,7 @@
 [project]
 name = "headless-excel"
 version = "0.1.0"
-description = "Excel wrapper with automatic recalculation via LibreOffice - OfficeJS-style API for headless environments"
+description = "Excel automation tool for headless environments"
 readme = "README.md"
 authors = [{ name = "Hew Li Yang", email = "hewliyang@u.nus.edu" }]
 requires-python = ">=3.11"
@@ -23,23 +23,15 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Office/Business :: Financial :: Spreadsheet",
 ]
-dependencies = [
-    "openpyxl>=3.1.0",
-]
+dependencies = ["openpyxl>=3.1.0"]
 
 [project.urls]
 Homepage = "https://github.com/brightriver/headless-excel"
 Repository = "https://github.com/brightriver/headless-excel"
 
-[project.scripts]
-convert-heredoc = "scripts.convert_heredoc:main"
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.uv]
-dev-dependencies = ["pytest>=8.0.0", "pytest-cov>=4.0.0", "ruff>=0.1.0"]
 
 [tool.ruff]
 line-length = 88
@@ -57,4 +49,7 @@ addopts = "-v"
 dev = [
     "ipykernel>=7.1.0",
     "ty>=0.0.7",
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
 ]
