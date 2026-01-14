@@ -733,6 +733,31 @@ class TestProxyValueUpdate:
             assert ws["A3"].value == 300  # type: ignore[union-attr]
             assert ws.range("A3").values == [[300]]
 
+    def test_renamed_sheet_proxy_updates_after_sync(self, tmp_path: Path):
+        """Verify that proxy still updates after sheet is renamed.
+
+        Regression test: cache key was stale after rename, causing
+        _update_values_wb to fail to find the sheet in values_wb.
+        """
+        path = tmp_path / "test.xlsx"
+        with create(path, auto_sync=False) as ctx:
+            # Access active sheet (cached under "Sheet")
+            ws = ctx.active
+            # Rename it (cache key becomes stale)
+            ws.title = "Renamed"
+
+            ws["A1"] = 100
+            ws["A2"] = "=A1*2"
+
+            # Before sync, should see formula
+            assert ws["A2"].value == "=A1*2"  # type: ignore[union-attr]
+
+            ctx.sync()
+
+            # After sync, should show calculated value despite rename
+            assert ws["A2"].value == 200  # type: ignore[union-attr]
+            assert ws.range("A1:A2").values == [[100], [200]]
+
 
 class TestBuildErrorDetails:
     def test_build_error_details_requires_sync(self, tmp_path: Path):

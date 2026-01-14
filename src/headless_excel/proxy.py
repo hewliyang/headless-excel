@@ -695,10 +695,12 @@ class WorkbookProxy:
         """Update the values workbook and refresh all cached sheet proxies."""
         self._values_wb = values_wb
         # Update all cached sheet proxies with new values worksheet
-        for sheet_name, sheet_proxy in self._sheet_cache.items():
+        # Use actual sheet title (not cache key) since title may have changed
+        for sheet_proxy in self._sheet_cache.values():
+            actual_title = sheet_proxy._formula_ws.title
             values_ws = None
-            if values_wb is not None and sheet_name in values_wb.sheetnames:
-                values_ws = values_wb[sheet_name]
+            if values_wb is not None and actual_title in values_wb.sheetnames:
+                values_ws = values_wb[actual_title]
             sheet_proxy._update_values_ws(values_ws)
 
     def __getitem__(self, key: str) -> WorksheetProxy:
