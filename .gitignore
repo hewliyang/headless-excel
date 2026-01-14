@@ -60,6 +60,9 @@ venv.bak/
 # UV (since this is a uv project)
 .uv/
 
+# Project-local hooks (user-specific)
+.headless-excel/
+
 # IDEs
 .vscode/
 .idea/

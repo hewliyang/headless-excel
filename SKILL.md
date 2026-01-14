@@ -126,38 +126,18 @@ with create("model.xlsx") as ctx:
     print(ws.range("B2:E5").shape)  # (4, 4)
 ```
 
-## Number Formats & Colors
+## Number Formats
 
-Use built-in constants for financial model conventions:
+Use built-in constants for number formatting:
 
 ```python
-from headless_excel import NumberFormats, Colors
-from openpyxl.styles import Font
+from headless_excel import NumberFormats
 
 ws['A1'].number_format = NumberFormats.ACCOUNTING      # $1,234.56
 ws['A1'].number_format = NumberFormats.PERCENTAGE_2DP  # 15.00%
-ws['A1'].font = Font(color=Colors.HARDCODE)      # Blue for inputs
-ws['A1'].font = Font(color=Colors.FORMULA)       # Black for formulas
-ws['A1'].font = Font(color=Colors.EXTERNAL_LINK) # Green for links
 ```
 
 **Formats:** `ACCOUNTING`, `ACCOUNTING_0DP`, `PERCENTAGE`, `PERCENTAGE_1DP`, `PERCENTAGE_2DP`, `NUMBER`, `NUMBER_0DP`, `DATE`, `DATE_LONG`
-
-## Auto-Apply Financial Colors
-
-Use `auto_financial_colors=True` (default) in `create()`/`run()` to automatically apply correct colors (hardcode=blue, formula=black, external link=green) on save:
-
-```python
-with create("model.xlsx", auto_financial_colors=True) as ctx:
-    # ... build your model
-    # colors applied automatically on exit
-
-with run("existing.xlsx", auto_financial_colors=True) as ctx:
-    # ... edit your model
-    # colors applied automatically on exit
-```
-
-Always combine with `lint_financial_colors=True` (also default) to enforce conventions and log warnings on violations.
 
 ## Error Handling
 
@@ -176,13 +156,9 @@ with create("model.xlsx") as ctx:
     #   Sheet!A1: #DIV/0! formula==B1/C1 inputs={Sheet!B1=10, Sheet!C1=0}
 ```
 
-## Styling Preferences in Finance
+## Styling Tips
 
-- Both `auto_financial_colors=True` and `lint_financial_colors=True` are enabled by default in `create()`/`run()`
-- Minimal fills, use built-in constants for coloring hardcodes, cross-sheet links. Red for checks.
-- No 4-sided boxes—only use borders for vertical/horizontal separation of sections (e.g., historical vs projected years)
-- Appropriate widths so data is readable out of the box—must be client-ready
-
-## `headless-excel`
-
-IMPORTANT: Read the full library documentation in ./README.md
+- Use openpyxl's `Font`, `PatternFill`, `Border` directly for styling
+- Set `ws.column_dimensions['A'].width` for appropriate column widths
+- Minimal fills, use borders sparingly for section separation
+- Appropriate widths so data is readable out of the box

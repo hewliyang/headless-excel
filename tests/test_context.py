@@ -93,7 +93,7 @@ class TestRun:
 
     def test_run_auto_sync_false(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
-        with create(path, auto_sync=False, lint_financial_colors=False) as ctx:
+        with create(path, auto_sync=False) as ctx:
             ctx.active["A1"] = 100
             ctx.workbook.save(path)
             # No auto sync, so values not available
@@ -168,7 +168,7 @@ class TestCreate:
         """Test that raise_on_errors=False does not raise."""
         path = tmp_path / "test.xlsx"
 
-        with create(path, raise_on_errors=False, lint_financial_colors=False) as ctx:
+        with create(path, raise_on_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 100
             ws["A2"] = "=A1+Sheet2!A1"
@@ -680,7 +680,7 @@ class TestProxyValueUpdate:
     def test_proxy_shows_calculated_value_after_sync(self, tmp_path: Path):
         """Verify that worksheet proxy returns calculated values after sync."""
         path = tmp_path / "test.xlsx"
-        with create(path, auto_sync=False, lint_financial_colors=False) as ctx:
+        with create(path, auto_sync=False) as ctx:
             # Use the proxy returned by create_sheet directly (don't reassign to ctx.active)
             ws = ctx.create_sheet("Sheet1", 0)
 
@@ -701,7 +701,7 @@ class TestProxyValueUpdate:
     def test_proxy_identity_maintained_after_sync(self, tmp_path: Path):
         """Verify that worksheet proxy object identity is maintained after sync."""
         path = tmp_path / "test.xlsx"
-        with create(path, auto_sync=False, lint_financial_colors=False) as ctx:
+        with create(path, auto_sync=False) as ctx:
             ws_before = ctx.active
             ws_before["A1"] = "=10+20"
 
@@ -717,7 +717,7 @@ class TestProxyValueUpdate:
     def test_create_sheet_proxy_updates_after_sync(self, tmp_path: Path):
         """Verify that proxy from create_sheet gets updated after sync."""
         path = tmp_path / "test.xlsx"
-        with create(path, auto_sync=False, lint_financial_colors=False) as ctx:
+        with create(path, auto_sync=False) as ctx:
             # Keep reference to proxy returned by create_sheet
             ws = ctx.create_sheet("Data", 0)
 
@@ -1098,7 +1098,7 @@ class TestFindErrors:
         """Test find_errors on RangeProxy after sync."""
         path = tmp_path / "test.xlsx"
 
-        with create(path, raise_on_errors=False, lint_financial_colors=False) as ctx:
+        with create(path, raise_on_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 10
             ws["A2"] = 0
@@ -1121,7 +1121,7 @@ class TestFindErrors:
         """Test find_errors returns empty dict when no errors."""
         path = tmp_path / "test.xlsx"
 
-        with create(path, raise_on_errors=False, lint_financial_colors=False) as ctx:
+        with create(path, raise_on_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 10
             ws["A2"] = 2
@@ -1148,7 +1148,7 @@ class TestFindErrors:
         """Test find_errors on WorksheetProxy after sync."""
         path = tmp_path / "test.xlsx"
 
-        with create(path, raise_on_errors=False, lint_financial_colors=False) as ctx:
+        with create(path, raise_on_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 10
             ws["A2"] = 0
@@ -1167,7 +1167,7 @@ class TestFindErrors:
         """Test find_errors returns empty dict when no errors on sheet."""
         path = tmp_path / "test.xlsx"
 
-        with create(path, raise_on_errors=False, lint_financial_colors=False) as ctx:
+        with create(path, raise_on_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 10
             ws["A2"] = "=A1*2"
@@ -1181,7 +1181,7 @@ class TestFindErrors:
         """Test find_errors on ExcelContext with single sheet."""
         path = tmp_path / "test.xlsx"
 
-        with create(path, raise_on_errors=False, lint_financial_colors=False) as ctx:
+        with create(path, raise_on_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 0
             ws["A2"] = "=1/A1"  # #DIV/0!
@@ -1197,7 +1197,7 @@ class TestFindErrors:
         """Test find_errors on ExcelContext aggregates from all sheets."""
         path = tmp_path / "test.xlsx"
 
-        with create(path, raise_on_errors=False, lint_financial_colors=False) as ctx:
+        with create(path, raise_on_errors=False) as ctx:
             ws1 = ctx.create_sheet("Sheet1")
             ws1["A1"] = 0
             ws1["A2"] = "=1/A1"  # #DIV/0!
@@ -1221,7 +1221,7 @@ class TestFindErrors:
         """Test find_errors returns empty dict when no errors in workbook."""
         path = tmp_path / "test.xlsx"
 
-        with create(path, raise_on_errors=False, lint_financial_colors=False) as ctx:
+        with create(path, raise_on_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 10
             ws["A2"] = "=A1*2"

@@ -44,7 +44,7 @@ with run("model.xlsx") as ctx:
 
 ## API
 
-### `create(path, overwrite=False, auto_sync=True, raise_on_errors=True, lint_financial_colors=True, auto_financial_colors=True)`
+### `create(path, overwrite=False, auto_sync=True, raise_on_errors=True, ...)`
 
 Create a new Excel file. By default, auto-applies and lints financial color conventions on exit.
 
@@ -84,15 +84,15 @@ with run("model.xlsx", raise_on_errors=True) as ctx:
 
 The context object provides:
 
-| Property/Method              | Description                                |
-| ---------------------------- | ------------------------------------------ |
-| `workbook` / `wb`            | The workbook proxy for editing and reading |
-| `active`                     | Get/set active worksheet (assignable)      |
-| `sheet(name)`                | Get worksheet by name                      |
-| `create_sheet(name)`         | Create new worksheet                       |
-| `delete_sheet(name)`         | Delete worksheet by name                   |
-| `sync(raise_on_errors=True)` | Save, recalc via LibreOffice, reload       |
-| `values`                     | Raw workbook with data_only=True           |
+| Property/Method      | Description                                |
+| -------------------- | ------------------------------------------ |
+| `workbook` / `wb`    | The workbook proxy for editing and reading |
+| `active`             | Get/set active worksheet (assignable)      |
+| `sheet(name)`        | Get worksheet by name                      |
+| `create_sheet(name)` | Create new worksheet                       |
+| `delete_sheet(name)` | Delete worksheet by name                   |
+| `sync()`             | Save, recalc via LibreOffice, reload       |
+| `values`             | Raw workbook with data_only=True           |
 
 #### Sheet Management
 
@@ -322,6 +322,55 @@ with create("model.xlsx", lint_financial_colors=False) as ctx:
 - `FormulaError` - Formula errors found (has `.errors` dict)
 - `RecalcError` - LibreOffice recalculation failed
 - `SyncError` - Save or sync operation failed
+
+### Hooks
+
+Hooks allow you to run custom code at key points in the Excel workflow without modifying your main code. Common use cases: auto-formatting, validation, logging.
+
+**Hook locations** (project-local takes precedence):
+
+- `./.headless-excel/hooks/*.py` — project-local
+- `~/.headless-excel/hooks/*.py` — global fallback
+
+**Hook types:**
+
+```python
+# ~/.headless-excel/hooks/my_hooks.py
+from headless_excel import ExcelContext, SyncResult, pre_sync, post_sync, on_exit
+
+@pre_sync
+def before_sync(ctx: ExcelContext) -> None:
+    """Called before each sync() — modify workbook before save."""
+    pass
+
+@post_sync
+def after_sync(ctx: ExcelContext, result: SyncResult) -> None:
+    """Called after each sync() — inspect results, log errors."""
+    pass
+
+@on_exit
+def on_context_exit(ctx: ExcelContext) -> None:
+    """Called when context exits — final validation, cleanup."""
+    pass
+```
+
+**Stateful hooks** using closures:
+
+```python
+from headless_excel import ExcelContext, ExtensionAPI, extension
+
+@extension
+def my_extension(api: ExtensionAPI):
+    sync_count = 0
+
+    @api.pre_sync
+    def count_syncs(ctx: ExcelContext) -> None:
+        nonlocal sync_count
+        sync_count += 1
+        print(f"Sync #{sync_count}")
+```
+
+See `examples/hooks/` for complete examples including financial color automation and audit logging.
 
 ## How It Works
 

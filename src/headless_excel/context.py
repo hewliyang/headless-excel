@@ -13,13 +13,16 @@ from typing import Any, TypeVar
 from openpyxl import Workbook, load_workbook
 
 from headless_excel.errors import (
-    ColorLintResult,
-    ColorLintViolation,
     ErrorDetail,
     ErrorScanResult,
     FormulaError,
     SyncError,
     get_max_errors_displayed,
+)
+from headless_excel.hooks import (
+    run_on_exit_hooks,
+    run_post_sync_hooks,
+    run_pre_sync_hooks,
 )
 from headless_excel.libre import recalc
 from headless_excel.proxy import WorkbookProxy, WorksheetProxy
@@ -123,7 +126,6 @@ class ExcelContext:
         path: str | Path,
         create: bool = False,
         recalc_timeout: int = 30,
-        auto_financial_colors: bool = False,
     ) -> None:
         """Initialize Excel context.
 
@@ -131,11 +133,9 @@ class ExcelContext:
             path: Path to the Excel file
             create: If True, create new workbook; if False, load existing
             recalc_timeout: Timeout in seconds for LibreOffice recalculation
-            auto_financial_colors: If True, apply financial colors before each sync
         """
         self.path = Path(path)
         self._recalc_timeout = recalc_timeout
-        self._auto_financial_colors = auto_financial_colors
         self._workbook: Workbook | None = None
         self._values_workbook: Workbook | None = None
         self._proxy: WorkbookProxy | None = None
@@ -283,6 +283,9 @@ class ExcelContext:
 
         This is the core operation - similar to OfficeJS ctx.sync().
 
+        Pre-sync and post-sync hooks are called automatically. Configure hooks
+        by placing Python files in ./.headless-excel/hooks/ or ~/.headless-excel/hooks/.
+
         Args:
             raise_on_errors: If True, raise FormulaError when errors found
 
@@ -296,9 +299,7 @@ class ExcelContext:
         if self._workbook is None:
             raise RuntimeError("Context not initialized")
 
-        # Apply financial colors before saving if enabled
-        if self._auto_financial_colors:
-            self.auto_financial_colors()
+        run_pre_sync_hooks(self)
 
         # Save current workbook
         try:
@@ -336,6 +337,8 @@ class ExcelContext:
             errors=error_scan.errors_by_type,
             error_details=error_details,
         )
+
+        run_post_sync_hooks(self, sync_result)
 
         if raise_on_errors:
             sync_result.raise_on_errors()
@@ -375,54 +378,6 @@ class ExcelContext:
 
         total = sum(len(locs) for locs in all_errors.values())
         return ErrorScanResult(errors_by_type=all_errors, total_errors=total)
-
-    def lint_financial_colors(self) -> ColorLintResult:
-        """Check all sheets for financial color convention violations.
-
-        Financial modeling conventions:
-        - Blue (HARDCODE): Literal/input values
-        - Black (FORMULA): Formulas without sheet references
-        - Green (EXTERNAL_LINK): Formulas with sheet references
-
-        Returns:
-            ColorLintResult with violations organized by sheet and total count.
-            Has a nice __repr__ with truncation for agent-friendly output.
-
-        Example:
-            >>> result = ctx.lint_financial_colors()
-            >>> print(result)
-            Color violations (2):
-              Sheet1! need HARDCODE (blue): A1
-              Sheet1! need FORMULA (black): A2
-        """
-        if self._workbook is None:
-            raise RuntimeError("Context not initialized")
-
-        all_violations: dict[str, list[ColorLintViolation]] = {}
-
-        for ws_proxy in self.workbook.worksheets:
-            sheet_violations = ws_proxy.lint_financial_colors()
-            if sheet_violations:
-                all_violations[ws_proxy.title] = sheet_violations
-
-        total = sum(len(v) for v in all_violations.values())
-        return ColorLintResult(
-            violations_by_sheet=all_violations, total_violations=total
-        )
-
-    def auto_financial_colors(self) -> None:
-        """Apply conventional financial modeling colors to all cells in all sheets.
-
-        See RangeProxy.auto_financial_colors() for details on the conventions.
-
-        Example:
-            ctx.auto_financial_colors()  # Apply to entire workbook
-        """
-        if self._workbook is None:
-            raise RuntimeError("Context not initialized")
-
-        for ws_proxy in self.workbook.worksheets:
-            ws_proxy.auto_financial_colors()
 
     def _extract_cell_refs(self, formula: str, default_sheet: str) -> list[str]:
         """Extract cell references from a formula.
@@ -528,15 +483,18 @@ def _run_context(
     auto_sync: bool,
     raise_on_errors: bool,
     recalc_timeout: int,
-    lint_financial_colors: bool,
-    auto_financial_colors: bool,
 ) -> Generator[ExcelContext, None, None]:
-    """Internal context manager for Excel operations."""
+    """Internal context manager for Excel operations.
+
+    Hooks are called automatically:
+    - pre_sync: before each sync()
+    - post_sync: after each sync()
+    - on_exit: when context manager exits
+    """
     ctx = ExcelContext(
         path,
         create=create_mode,
         recalc_timeout=recalc_timeout,
-        auto_financial_colors=auto_financial_colors,
     )
     try:
         yield ctx
@@ -552,11 +510,8 @@ def _run_context(
                 )
                 # hack to suppress traceback to reduce context pollution
                 raise SystemExit(str(err))
-        # Check financial color conventions if requested
-        if lint_financial_colors:
-            violations = ctx.lint_financial_colors()
-            if violations:
-                logger.warning(str(violations))
+
+        run_on_exit_hooks(ctx)
     finally:
         ctx.close()
 
@@ -567,19 +522,26 @@ def run(
     auto_sync: bool = True,
     raise_on_errors: bool = True,
     recalc_timeout: int = 30,
-    lint_financial_colors: bool = True,
-    auto_financial_colors: bool = True,
 ) -> Generator[ExcelContext, None, None]:
     """Open an existing Excel file for operations.
 
     Similar to OfficeJS Excel.run() - provides a context, handles cleanup,
     and optionally auto-syncs on exit.
 
+    Hooks are called automatically at key points:
+    - pre_sync: before each sync() (e.g., auto-formatting)
+    - post_sync: after each sync() (e.g., logging)
+    - on_exit: when context exits (e.g., linting)
+
+    Configure hooks by placing Python files in:
+    - ./.headless-excel/hooks/ (project-local, takes precedence)
+    - ~/.headless-excel/hooks/ (global fallback)
+
     Example:
         with run("model.xlsx") as ctx:
             ctx.active["A1"] = 100
             ctx.active["A2"] = "=A1*2"
-            # auto-syncs on exit, lints financial colors by default
+            # auto-syncs on exit, hooks run automatically
 
         # Or with explicit sync:
         with run("model.xlsx", auto_sync=False) as ctx:
@@ -587,26 +549,12 @@ def run(
             ctx.sync()  # manual sync
             print(ctx.values.active["A1"].value)
 
-        # Disable financial color linting:
-        with run("model.xlsx", lint_financial_colors=False) as ctx:
-            ctx.active["A1"] = 100  # No color check on exit
-
-        # Auto-apply financial colors before sync:
-        with run("model.xlsx", auto_financial_colors=True) as ctx:
-            ctx.active["A1"] = 100  # Blue (hardcode)
-            ctx.active["A2"] = "=A1*2"  # Black (formula)
-            # Colors applied automatically before sync
-
     Args:
         path: Path to existing Excel file
         auto_sync: If True, automatically sync on context exit
         raise_on_errors: If True, raise FormulaError on sync errors
             else, raises SystemExit with error message to suppress traceback
         recalc_timeout: Timeout in seconds for LibreOffice recalculation
-        lint_financial_colors: If True (default), check color conventions on exit
-            and log warnings for violations
-        auto_financial_colors: If True, automatically apply financial colors
-            (blue=hardcode, black=formula, green=external) before sync
 
     Yields:
         ExcelContext for operations
@@ -620,8 +568,6 @@ def run(
         auto_sync,
         raise_on_errors,
         recalc_timeout,
-        lint_financial_colors,
-        auto_financial_colors,
     )
 
 
@@ -632,29 +578,26 @@ def create(
     auto_sync: bool = True,
     raise_on_errors: bool = True,
     recalc_timeout: int = 30,
-    lint_financial_colors: bool = True,
-    auto_financial_colors: bool = True,
 ) -> Generator[ExcelContext, None, None]:
     """Create a new Excel file.
+
+    Hooks are called automatically at key points:
+    - pre_sync: before each sync() (e.g., auto-formatting)
+    - post_sync: after each sync() (e.g., logging)
+    - on_exit: when context exits (e.g., linting)
+
+    Configure hooks by placing Python files in:
+    - ./.headless-excel/hooks/ (project-local, takes precedence)
+    - ~/.headless-excel/hooks/ (global fallback)
 
     Example:
         with create("new.xlsx") as ctx:
             ctx.active["A1"] = "Hello"
-            # auto-syncs on exit, lints financial colors by default
+            # auto-syncs on exit, hooks run automatically
 
         # Overwrite existing file:
         with create("existing.xlsx", overwrite=True) as ctx:
             ctx.active["A1"] = "Fresh start"
-
-        # Disable financial color linting:
-        with create("model.xlsx", lint_financial_colors=False) as ctx:
-            ctx.active["A1"] = 100  # No color check on exit
-
-        # Auto-apply financial colors before sync:
-        with create("model.xlsx", overwrite=True, auto_financial_colors=True) as ctx:
-            ctx.active["A1"] = 100  # Blue (hardcode)
-            ctx.active["A2"] = "=A1*2"  # Black (formula)
-            # Colors applied automatically before sync
 
     Args:
         path: Path for the new Excel file
@@ -663,10 +606,6 @@ def create(
         raise_on_errors: If True, raise FormulaError on sync errors
             else, raises SystemExit with error message to suppress traceback
         recalc_timeout: Timeout in seconds for LibreOffice recalculation
-        lint_financial_colors: If True (default), check color conventions on exit
-            and log warnings for violations
-        auto_financial_colors: If True, automatically apply financial colors
-            (blue=hardcode, black=formula, green=external) before sync
 
     Yields:
         ExcelContext for operations
@@ -685,6 +624,4 @@ def create(
         auto_sync,
         raise_on_errors,
         recalc_timeout,
-        lint_financial_colors,
-        auto_financial_colors,
     )
