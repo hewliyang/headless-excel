@@ -7,7 +7,7 @@ description: "Creating & editing with Excel workbooks"
 
 Wraps `openpyxl` with automatic formula recalculation and error detection via LibreOffice.
 
-Keep heredocs under 100 LoC per tool call. Call `ctx.sync()` frequently to catch errors early and avoid error propagation.
+Use heredocs to run inline python scripts in bash instead of creating entire scripts. Keep them under 100 LoC per batch of changes, you should build up the worksheets incrementally. Call `ctx.sync()` frequently to catch errors early and avoid error propagation.
 
 **CRITICAL**
 Remember that formula results do not materialize until either the context manager exits and reenters OR ctx.sync() is called manually.
