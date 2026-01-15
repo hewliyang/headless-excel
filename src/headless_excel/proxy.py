@@ -746,6 +746,14 @@ class WorksheetProxy:
         self._on_write = on_write
         self._cell_cache: dict[str, CellProxy] = {}  # Cache cell proxies
 
+    def _update_formula_ws(self, formula_ws: Worksheet) -> None:
+        """Update the formula worksheet and refresh all cached cell proxies."""
+        self._formula_ws = formula_ws
+        # Update all cached cell proxies with new formula cells
+        for coord, cell_proxy in self._cell_cache.items():
+            formula_cell = formula_ws[coord]
+            cell_proxy._formula_cell = formula_cell
+
     def _update_values_ws(self, values_ws: Worksheet | None) -> None:
         """Update the values worksheet and refresh all cached cell proxies."""
         self._values_ws = values_ws
@@ -1002,6 +1010,17 @@ class WorkbookProxy:
         self._values_wb = values_wb
         self._on_write = on_write
         self._sheet_cache: dict[str, WorksheetProxy] = {}  # Cache sheet proxies
+
+    def _update_formula_wb(self, formula_wb: Workbook) -> None:
+        """Update the formula workbook and refresh all cached sheet proxies."""
+        self._formula_wb = formula_wb
+        # Update all cached sheet proxies with new formula worksheet
+        # Use actual sheet title (not cache key) since title may have changed
+        for sheet_proxy in self._sheet_cache.values():
+            actual_title = sheet_proxy._formula_ws.title
+            if actual_title in formula_wb.sheetnames:
+                formula_ws = formula_wb[actual_title]
+                sheet_proxy._update_formula_ws(formula_ws)
 
     def _update_values_wb(self, values_wb: Workbook | None) -> None:
         """Update the values workbook and refresh all cached sheet proxies."""

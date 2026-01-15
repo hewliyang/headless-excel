@@ -839,6 +839,49 @@ class TestAutoFill:
             ctx.active.range("A1:A3").auto_fill()
             assert ctx._dirty
 
+    def test_auto_fill_after_sync_calculates_values(self, tmp_path: Path):
+        """Test that formulas added after sync() are calculated correctly.
+
+        Regression test: formulas added after an initial sync() were not
+        being calculated because cached WorksheetProxy objects still
+        pointed to the old formula workbook after reload.
+        """
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            # Set up data and sync first
+            ctx.active["B1"] = 10
+            ctx.active["C1"] = 2
+            ctx.active["C2"] = 3
+            ctx.active["C3"] = 4
+            ctx.sync()
+
+            # Now add formula with auto_fill AFTER the sync
+            ctx.active["D1"] = "=$B$1*C1"
+            ctx.active.range("D1:D3").auto_fill()
+            ctx.sync()
+
+            # Values should be calculated: 10*2=20, 10*3=30, 10*4=40
+            assert ctx.active["D1"].value == 20
+            assert ctx.active["D2"].value == 30
+            assert ctx.active["D3"].value == 40
+
+    def test_formula_after_sync_calculates(self, tmp_path: Path):
+        """Test that any formula added after sync() is calculated.
+
+        Regression test: this is the simpler case without auto_fill.
+        """
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = 10
+            ctx.active["B1"] = 5
+            ctx.sync()
+
+            # Add formula after sync
+            ctx.active["C1"] = "=A1+B1"
+            ctx.sync()
+
+            assert ctx.active["C1"].value == 15
+
 
 class TestSheetFormulas:
     """Tests for WorksheetProxy.formulas property."""

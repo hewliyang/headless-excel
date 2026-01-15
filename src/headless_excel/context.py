@@ -316,9 +316,9 @@ class ExcelContext:
         # Load values workbook
         self._values_workbook = load_workbook(self.path, data_only=True)
 
-        # Update proxy with values workbook (preserves object identity)
+        # Update proxy with reloaded workbooks (preserves object identity)
         if self._proxy:
-            self._proxy._formula_wb = self._workbook
+            self._proxy._update_formula_wb(self._workbook)
             self._proxy._update_values_wb(self._values_workbook)
         else:
             self._proxy = WorkbookProxy(
