@@ -385,7 +385,7 @@ class TestRangeApplyStyle:
         with ExcelContext(path) as ctx:
             cell: CellProxy = ctx.active["A1"]  # type: ignore[assignment]
             assert cell.font.bold is True
-            assert cell.font.color.rgb == "00FF0000"
+            assert cell.font.color.rgb == "00FF0000"  # type: ignore[union-attr]
 
     def test_apply_font_to_range(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
@@ -422,10 +422,10 @@ class TestRangeApplyStyle:
 
         with ExcelContext(path) as ctx:
             cell: CellProxy = ctx.active["A1"]  # type: ignore[assignment]
-            assert cell.fill.type == "linear"
-            assert len(cell.fill.stop) == 2
-            assert cell.fill.stop[0].color.rgb == "00FF0000"
-            assert cell.fill.stop[1].color.rgb == "000000FF"
+            assert cell.fill.type == "linear"  # type: ignore[union-attr]
+            assert len(cell.fill.stop) == 2  # type: ignore[union-attr,arg-type]
+            assert cell.fill.stop[0].color.rgb == "00FF0000"  # type: ignore[union-attr,index]
+            assert cell.fill.stop[1].color.rgb == "000000FF"  # type: ignore[union-attr,index]
 
     def test_apply_gradient_fill_to_range(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
@@ -439,10 +439,10 @@ class TestRangeApplyStyle:
         with ExcelContext(path) as ctx:
             for col in ["A", "B", "C"]:
                 cell: CellProxy = ctx.active[f"{col}1"]  # type: ignore[assignment]
-                assert cell.fill.type == "linear"
-                assert cell.fill.degree == 90
-                assert cell.fill.stop[0].color.rgb == "0000FF00"
-                assert cell.fill.stop[1].color.rgb == "00FFFF00"
+                assert cell.fill.type == "linear"  # type: ignore[union-attr]
+                assert cell.fill.degree == 90  # type: ignore[union-attr]
+                assert cell.fill.stop[0].color.rgb == "0000FF00"  # type: ignore[union-attr,index]
+                assert cell.fill.stop[1].color.rgb == "00FFFF00"  # type: ignore[union-attr,index]
 
     def test_gradient_fill_takes_precedence_over_fill(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
@@ -455,8 +455,8 @@ class TestRangeApplyStyle:
 
         with ExcelContext(path) as ctx:
             cell: CellProxy = ctx.active["A1"]  # type: ignore[assignment]
-            assert cell.fill.type == "linear"
-            assert len(cell.fill.stop) == 2
+            assert cell.fill.type == "linear"  # type: ignore[union-attr]
+            assert len(cell.fill.stop) == 2  # type: ignore[union-attr,arg-type]
 
     def test_apply_number_format(self, tmp_path: Path):
         path = tmp_path / "test.xlsx"
@@ -526,7 +526,7 @@ class TestRangeApplyStyle:
         with ExcelContext(path) as ctx:
             cell: CellProxy = ctx.active["B2"]  # type: ignore[assignment]
             assert cell.font.bold is True
-            assert cell.fill.start_color.rgb == "0000FF00"
+            assert cell.fill.start_color.rgb == "0000FF00"  # type: ignore[union-attr]
             assert cell.number_format == "0.00"
             assert cell.alignment.horizontal == "right"
 
@@ -561,7 +561,11 @@ class TestRangeClear:
 
             # All values should be None
             values = ctx.active.range("A1:C3").values
-            assert values == [[None, None, None], [None, None, None], [None, None, None]]
+            assert values == [
+                [None, None, None],
+                [None, None, None],
+                [None, None, None],
+            ]
 
     def test_clear_preserves_styles_by_default(self, tmp_path: Path):
         """Test that clear() preserves styles when styles=False."""
@@ -616,6 +620,223 @@ class TestRangeClear:
             assert not ctx._dirty
 
             ctx.active.range("A1").clear()
+            assert ctx._dirty
+
+
+class TestAutoFill:
+    """Tests for RangeProxy.auto_fill() method."""
+
+    def test_auto_fill_formula_down(self, tmp_path: Path):
+        """Test basic formula fill downward."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = "=B1*C1"
+            ctx.active.range("A1:A5").auto_fill()
+
+            assert ctx.active.get_cell("A1").formula == "=B1*C1"
+            assert ctx.active.get_cell("A2").formula == "=B2*C2"
+            assert ctx.active.get_cell("A3").formula == "=B3*C3"
+            assert ctx.active.get_cell("A4").formula == "=B4*C4"
+            assert ctx.active.get_cell("A5").formula == "=B5*C5"
+
+    def test_auto_fill_formula_right(self, tmp_path: Path):
+        """Test formula fill rightward."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = "=A2+A3"
+            ctx.active.range("A1:D1").auto_fill(direction="right")
+
+            assert ctx.active.get_cell("A1").formula == "=A2+A3"
+            assert ctx.active.get_cell("B1").formula == "=B2+B3"
+            assert ctx.active.get_cell("C1").formula == "=C2+C3"
+            assert ctx.active.get_cell("D1").formula == "=D2+D3"
+
+    def test_auto_fill_formula_up(self, tmp_path: Path):
+        """Test formula fill upward."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A5"] = "=B5*2"
+            ctx.active.range("A1:A5").auto_fill(direction="up")
+
+            assert ctx.active.get_cell("A5").formula == "=B5*2"
+            assert ctx.active.get_cell("A4").formula == "=B4*2"
+            assert ctx.active.get_cell("A3").formula == "=B3*2"
+            assert ctx.active.get_cell("A2").formula == "=B2*2"
+            assert ctx.active.get_cell("A1").formula == "=B1*2"
+
+    def test_auto_fill_formula_left(self, tmp_path: Path):
+        """Test formula fill leftward."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["D1"] = "=D2*2"
+            ctx.active.range("A1:D1").auto_fill(direction="left")
+
+            assert ctx.active.get_cell("D1").formula == "=D2*2"
+            assert ctx.active.get_cell("C1").formula == "=C2*2"
+            assert ctx.active.get_cell("B1").formula == "=B2*2"
+            assert ctx.active.get_cell("A1").formula == "=A2*2"
+
+    def test_auto_fill_absolute_references(self, tmp_path: Path):
+        """Test that absolute references stay fixed."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = "=$B$1*C1"
+            ctx.active.range("A1:A3").auto_fill()
+
+            assert ctx.active.get_cell("A1").formula == "=$B$1*C1"
+            assert ctx.active.get_cell("A2").formula == "=$B$1*C2"
+            assert ctx.active.get_cell("A3").formula == "=$B$1*C3"
+
+    def test_auto_fill_mixed_references(self, tmp_path: Path):
+        """Test that mixed references adjust correctly."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = "=$B1*C$1"
+            ctx.active.range("A1:A3").auto_fill()
+
+            assert ctx.active.get_cell("A1").formula == "=$B1*C$1"
+            assert ctx.active.get_cell("A2").formula == "=$B2*C$1"
+            assert ctx.active.get_cell("A3").formula == "=$B3*C$1"
+
+    def test_auto_fill_values(self, tmp_path: Path):
+        """Test that non-formula values are copied as-is."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = 100
+            ctx.active.range("A1:A5").auto_fill()
+
+            for row in range(1, 6):
+                assert ctx.active.get_cell(f"A{row}").value == 100
+
+    def test_auto_fill_cross_sheet_reference(self, tmp_path: Path):
+        """Test that cross-sheet references adjust correctly."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = "=Sheet2!A1+B1"
+            ctx.active.range("A1:A3").auto_fill()
+
+            assert ctx.active.get_cell("A1").formula == "=Sheet2!A1+B1"
+            assert ctx.active.get_cell("A2").formula == "=Sheet2!A2+B2"
+            assert ctx.active.get_cell("A3").formula == "=Sheet2!A3+B3"
+
+    def test_auto_fill_sum_range(self, tmp_path: Path):
+        """Test that range references in functions adjust correctly."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = "=SUM(B1:D1)"
+            ctx.active.range("A1:A3").auto_fill()
+
+            assert ctx.active.get_cell("A1").formula == "=SUM(B1:D1)"
+            assert ctx.active.get_cell("A2").formula == "=SUM(B2:D2)"
+            assert ctx.active.get_cell("A3").formula == "=SUM(B3:D3)"
+
+    def test_auto_fill_multi_row_source(self, tmp_path: Path):
+        """Test multi-row source pattern repeats correctly."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = "=X1"
+            ctx.active["A2"] = "=Y1"
+            ctx.active.range("A1:A8").auto_fill(source_rows=2)
+
+            assert ctx.active.get_cell("A1").formula == "=X1"
+            assert ctx.active.get_cell("A2").formula == "=Y1"
+            assert ctx.active.get_cell("A3").formula == "=X3"
+            assert ctx.active.get_cell("A4").formula == "=Y3"
+            assert ctx.active.get_cell("A5").formula == "=X5"
+            assert ctx.active.get_cell("A6").formula == "=Y5"
+            assert ctx.active.get_cell("A7").formula == "=X7"
+            assert ctx.active.get_cell("A8").formula == "=Y7"
+
+    def test_auto_fill_multi_col_source(self, tmp_path: Path):
+        """Test multi-column source pattern repeats correctly."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = "=A2"
+            ctx.active["B1"] = "=B3"
+            ctx.active.range("A1:F1").auto_fill(direction="right", source_cols=2)
+
+            assert ctx.active.get_cell("A1").formula == "=A2"
+            assert ctx.active.get_cell("B1").formula == "=B3"
+            assert ctx.active.get_cell("C1").formula == "=C2"
+            assert ctx.active.get_cell("D1").formula == "=D3"
+            assert ctx.active.get_cell("E1").formula == "=E2"
+            assert ctx.active.get_cell("F1").formula == "=F3"
+
+    def test_auto_fill_copies_styles(self, tmp_path: Path):
+        """Test that styles are copied by default."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = 100
+            ctx.active.get_cell("A1").font = Font(bold=True, color="0000FF")
+            ctx.active.get_cell("A1").number_format = "#,##0.00"
+            ctx.active.range("A1:A3").auto_fill()
+
+            for row in range(1, 4):
+                cell = ctx.active._formula_ws.cell(row, 1)
+                assert cell.font.bold is True
+                assert cell.font.color.rgb == "000000FF"
+                assert cell.number_format == "#,##0.00"
+
+    def test_auto_fill_skip_styles(self, tmp_path: Path):
+        """Test that style copying can be disabled."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = 100
+            ctx.active.get_cell("A1").font = Font(bold=True)
+            ctx.active.range("A1:A3").auto_fill(copy_styles=False)
+
+            assert ctx.active._formula_ws.cell(1, 1).font.bold is True
+            assert ctx.active._formula_ws.cell(2, 1).font.bold is False
+            assert ctx.active._formula_ws.cell(3, 1).font.bold is False
+
+    def test_auto_fill_single_cell_raises(self, tmp_path: Path):
+        """Test that single cell range raises ValueError."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            with pytest.raises(ValueError, match="Cannot auto_fill a single cell"):
+                ctx.active.range("A1").auto_fill()
+
+    def test_auto_fill_source_rows_too_large_raises(self, tmp_path: Path):
+        """Test that source_rows >= range rows raises ValueError."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            with pytest.raises(ValueError, match="source_rows.*must be less than"):
+                ctx.active.range("A1:A3").auto_fill(source_rows=3)
+
+    def test_auto_fill_source_cols_too_large_raises(self, tmp_path: Path):
+        """Test that source_cols >= range cols raises ValueError."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            with pytest.raises(ValueError, match="source_cols.*must be less than"):
+                ctx.active.range("A1:C1").auto_fill(direction="right", source_cols=3)
+
+    def test_auto_fill_auto_direction_tall(self, tmp_path: Path):
+        """Test that auto direction chooses 'down' for tall ranges."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = "=B1"
+            ctx.active.range("A1:A5").auto_fill()  # 5 rows, 1 col -> down
+
+            assert ctx.active.get_cell("A2").formula == "=B2"
+
+    def test_auto_fill_auto_direction_wide(self, tmp_path: Path):
+        """Test that auto direction chooses 'right' for wide ranges."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = "=A2"
+            ctx.active.range("A1:E1").auto_fill()  # 1 row, 5 cols -> right
+
+            assert ctx.active.get_cell("B1").formula == "=B2"
+
+    def test_auto_fill_marks_dirty(self, tmp_path: Path):
+        """Test that auto_fill() marks context as dirty."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = 100
+            ctx.sync()
+            assert not ctx._dirty
+
+            ctx.active.range("A1:A3").auto_fill()
             assert ctx._dirty
 
 

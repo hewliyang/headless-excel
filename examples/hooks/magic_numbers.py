@@ -1,35 +1,38 @@
 """Magic numbers detection hook.
 
-Requires: pip install formulas
-
 Detects numbers in math/comparison operations (*, /, +, -, >, <, etc.)
 Skips function arguments to avoid false positives (VLOOKUP column index, etc.)
 """
 
-import formulas
-from formulas.tokens.operand import Number
-from formulas.tokens.operator import OperatorToken
+from openpyxl.formula.tokenizer import Tokenizer
 
 from headless_excel import ExcelContext, on_exit
 
 
 def _extract_magic_numbers(formula: str) -> list[float]:
-    """Extract magic numbers from a formula using AST parsing."""
+    """Extract magic numbers from a formula using openpyxl tokenizer."""
     if not formula.startswith("="):
         return []
     try:
-        tokens, _ = formulas.Parser().ast(formula)
+        tok = Tokenizer(formula)
     except Exception:
         return []
 
     numbers = []
-    prev = None
-    for token in tokens:
-        if isinstance(token, Number):
-            # Magic if preceded by operator, not function argument (separator)
-            if prev is None or isinstance(prev, OperatorToken):
-                numbers.append(float(token.name))
-        prev = token
+    prev_type = None
+    func_depth = 0  # track if we're inside function args
+
+    for t in tok.items:
+        if t.type == "FUNC":
+            if t.subtype == "OPEN":
+                func_depth += 1
+            elif t.subtype == "CLOSE":
+                func_depth -= 1
+        elif t.type == "OPERAND" and t.subtype == "NUMBER":
+            # Magic if preceded by infix operator AND not inside function args
+            if func_depth == 0 or prev_type == "OPERATOR-INFIX":
+                numbers.append(float(t.value))
+        prev_type = t.type
     return numbers
 
 

@@ -168,6 +168,45 @@ with create("model.xlsx") as ctx:
     ws.range("A1:C3").formula_count  # number of formulas in range
 ```
 
+#### Auto Fill
+
+Fill ranges like Excel's drag handle — formulas adjust their references automatically:
+
+```python
+with create("model.xlsx") as ctx:
+    ws = ctx.active
+
+    # Basic formula fill down (like dragging the fill handle)
+    ws["A1"] = "=B1*C1"
+    ws.range("A1:A10").auto_fill()  # A2:A10 get =B2*C2, =B3*C3, etc.
+
+    # Fill right
+    ws["A1"] = "=A2+A3"
+    ws.range("A1:D1").auto_fill(direction="right")  # B1:D1 get =B2+B3, etc.
+
+    # Fill up or left
+    ws["A10"] = "=B10"
+    ws.range("A1:A10").auto_fill(direction="up")  # Fills from bottom
+
+    # Absolute references stay fixed, relative adjust
+    ws["A1"] = "=$B$1*C1"
+    ws.range("A1:A5").auto_fill()  # =$B$1*C2, =$B$1*C3, etc.
+
+    # Multi-row source pattern (like selecting 2 rows and dragging)
+    ws["A1"] = "Revenue"
+    ws["A2"] = "=SUM(B1:D1)"
+    ws.range("A1:A8").auto_fill(source_rows=2)  # Alternates pattern
+
+    # Multi-column source pattern
+    ws.range("A1:B1").values = [["Q1", "=A1+1"]]
+    ws.range("A1:H1").auto_fill(direction="right", source_cols=2)
+
+    # Style copying (enabled by default)
+    ws["A1"].font = Font(bold=True)
+    ws.range("A1:A5").auto_fill()  # All cells get bold
+    ws.range("A1:A5").auto_fill(copy_styles=False)  # Values only
+```
+
 #### Range Styling
 
 Apply styles to all cells in a range at once:

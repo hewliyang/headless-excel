@@ -126,6 +126,26 @@ with create("model.xlsx") as ctx:
     print(ws.range("B2:E5").shape)  # (4, 4)
 ```
 
+## Auto Fill (Like Excel Drag Handle)
+
+```py
+ws["A1"] = "=B1*C1"
+ws.range("A1:A100").auto_fill()  # Fills down: =B2*C2, =B3*C3, ...
+
+ws.range("A1:D1").auto_fill(direction="right")  # Fill right
+ws.range("A1:A10").auto_fill(direction="up")    # Fill up from last row
+
+# Absolute refs ($) stay fixed, relative refs adjust
+ws["A1"] = "=$B$1*C1"
+ws.range("A1:A5").auto_fill()  # =$B$1*C2, =$B$1*C3, ...
+
+# Multi-row pattern (like selecting 2 rows and dragging)
+ws["A1"], ws["A2"] = "Label", "=SUM(B1:D1)"
+ws.range("A1:A10").auto_fill(source_rows=2)  # Alternates pattern
+
+# Copies styles by default; disable with copy_styles=False
+```
+
 ## Number Formats
 
 Use built-in constants for number formatting:

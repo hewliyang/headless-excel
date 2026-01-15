@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from typing import Any
+from copy import copy
+from typing import Any, Literal
 
-from openpyxl.cell.cell import Cell
+from openpyxl.cell.cell import ERROR_CODES, Cell
+from openpyxl.formula.translate import Translator
 from openpyxl.styles import (
     Alignment,
     Border,
@@ -15,24 +17,13 @@ from openpyxl.styles import (
     PatternFill,
     Protection,
 )
-from openpyxl.utils import column_index_from_string
+from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 from headless_excel.errors import ErrorScanResult
 
-# Excel error types to detect
-EXCEL_ERRORS = (
-    "#VALUE!",
-    "#DIV/0!",
-    "#REF!",
-    "#NAME?",
-    "#NULL!",
-    "#NUM!",
-    "#N/A",
-    "#SPILL!",
-    "#CALC!",
-)
+EXCEL_ERRORS = ERROR_CODES + ("#SPILL!", "#CALC!")
 
 # Type alias for write callback
 OnWriteCallback = Callable[[], None] | None
@@ -254,8 +245,6 @@ class RangeProxy:
             |    10 |    20 |    30 |
             |     1 |     2 |     3 |
         """
-        from openpyxl.utils import get_column_letter
-
         # Collect data
         if show_formulas:
             data = []
@@ -390,6 +379,209 @@ class RangeProxy:
                 if number_format is not None:
                     cell.number_format = number_format
 
+    def auto_fill(
+        self,
+        direction: Literal["down", "right", "up", "left"] | None = None,
+        source_rows: int = 1,
+        source_cols: int = 1,
+        copy_styles: bool = True,
+    ) -> None:
+        """Fill the range by repeating source cells, adjusting formula references.
+
+        Mimics Excel's auto-fill (drag handle) behavior:
+        - Formulas have their relative references adjusted
+        - Absolute references ($A$1) stay fixed
+        - Mixed references ($A1, A$1) adjust partially
+        - Values (numbers, text) are copied as-is
+        - Styles are copied by default
+
+        The source cells are determined by direction:
+        - down: First row(s) are source, fill downward
+        - right: First column(s) are source, fill rightward
+        - up: Last row(s) are source, fill upward
+        - left: Last column(s) are source, fill leftward
+        - None: Auto-detect based on range shape (tall=down, wide=right)
+
+        Args:
+            direction: Fill direction, or None to auto-detect
+            source_rows: Number of source rows to repeat (for down/up fill)
+            source_cols: Number of source columns to repeat (for left/right fill)
+            copy_styles: If True (default), copy cell styles along with values
+
+        Raises:
+            ValueError: If range is a single cell (nothing to fill)
+            ValueError: If source size >= range size in fill direction
+
+        Example:
+            >>> ws["A1"] = "=B1*C1"
+            >>> ws.range("A1:A10").auto_fill()  # Fills A2:A10 with adjusted formulas
+
+            >>> ws.range("A1:C1").values = [[1, 2, 3]]
+            >>> ws.range("A1:C10").auto_fill()  # Fills rows 2-10
+
+            >>> ws["A1"] = "=A2+A3"
+            >>> ws.range("A1:D1").auto_fill(direction="right")  # Fills B1:D1
+
+            # Multi-row source pattern (like Excel alternating rows)
+            >>> ws["A1"] = "Revenue"
+            >>> ws["A2"] = "Expenses"
+            >>> ws.range("A1:A8").auto_fill(source_rows=2)  # Repeats pattern
+        """
+        # Validate range has something to fill
+        if self.num_rows == 1 and self.num_cols == 1:
+            raise ValueError("Cannot auto_fill a single cell range")
+
+        # Auto-detect direction if not specified
+        if direction is None:
+            if self.num_rows >= self.num_cols:
+                direction = "down"
+            else:
+                direction = "right"
+
+        # Validate source size
+        if direction in ("down", "up") and source_rows >= self.num_rows:
+            raise ValueError(
+                f"source_rows ({source_rows}) must be less than range rows ({self.num_rows})"
+            )
+        if direction in ("left", "right") and source_cols >= self.num_cols:
+            raise ValueError(
+                f"source_cols ({source_cols}) must be less than range cols ({self.num_cols})"
+            )
+
+        if self._on_write:
+            self._on_write()
+
+        if direction == "down":
+            self._fill_down(copy_styles, source_rows)
+        elif direction == "right":
+            self._fill_right(copy_styles, source_cols)
+        elif direction == "up":
+            self._fill_up(copy_styles, source_rows)
+        elif direction == "left":
+            self._fill_left(copy_styles, source_cols)
+        else:
+            raise ValueError(f"Invalid direction: {direction!r}")
+
+    def _copy_cell_style(self, source_cell, target_cell) -> None:
+        """Copy all style attributes from source to target cell."""
+        target_cell.font = copy(source_cell.font)
+        target_cell.fill = copy(source_cell.fill)
+        target_cell.border = copy(source_cell.border)
+        target_cell.alignment = copy(source_cell.alignment)
+        target_cell.protection = copy(source_cell.protection)
+        target_cell.number_format = source_cell.number_format
+
+    def _translate_formula(self, formula: str, from_coord: str, to_coord: str) -> str:
+        """Translate a formula from one cell to another, adjusting references."""
+        translator = Translator(formula, from_coord)
+        return translator.translate_formula(to_coord)
+
+    def _fill_down(self, copy_styles: bool, source_rows: int = 1) -> None:
+        """Fill downward - first row(s) are source, repeating as pattern."""
+        # Target rows start after source rows
+        target_start = self._min_row + source_rows
+
+        for target_row in range(target_start, self._max_row + 1):
+            # Calculate which source row to use (cycling through source rows)
+            source_offset = (target_row - target_start) % source_rows
+            source_row = self._min_row + source_offset
+
+            for col_idx in range(self._min_col, self._max_col + 1):
+                source_cell = self._ws._formula_ws.cell(source_row, col_idx)
+                target_cell = self._ws._formula_ws.cell(target_row, col_idx)
+                col_letter = get_column_letter(col_idx)
+
+                # Copy value, translating formula if needed
+                value = source_cell.value
+                if isinstance(value, str) and value.startswith("="):
+                    from_coord = f"{col_letter}{source_row}"
+                    to_coord = f"{col_letter}{target_row}"
+                    value = self._translate_formula(value, from_coord, to_coord)
+                target_cell.value = value
+
+                if copy_styles:
+                    self._copy_cell_style(source_cell, target_cell)
+
+    def _fill_right(self, copy_styles: bool, source_cols: int = 1) -> None:
+        """Fill rightward - first column(s) are source, repeating as pattern."""
+        # Target cols start after source cols
+        target_start = self._min_col + source_cols
+
+        for target_col in range(target_start, self._max_col + 1):
+            # Calculate which source column to use (cycling through source cols)
+            source_offset = (target_col - target_start) % source_cols
+            source_col = self._min_col + source_offset
+            source_col_letter = get_column_letter(source_col)
+            target_col_letter = get_column_letter(target_col)
+
+            for row_idx in range(self._min_row, self._max_row + 1):
+                source_cell = self._ws._formula_ws.cell(row_idx, source_col)
+                target_cell = self._ws._formula_ws.cell(row_idx, target_col)
+
+                # Copy value, translating formula if needed
+                value = source_cell.value
+                if isinstance(value, str) and value.startswith("="):
+                    from_coord = f"{source_col_letter}{row_idx}"
+                    to_coord = f"{target_col_letter}{row_idx}"
+                    value = self._translate_formula(value, from_coord, to_coord)
+                target_cell.value = value
+
+                if copy_styles:
+                    self._copy_cell_style(source_cell, target_cell)
+
+    def _fill_up(self, copy_styles: bool, source_rows: int = 1) -> None:
+        """Fill upward - last row(s) are source, repeating as pattern."""
+        # Target rows end before source rows
+        target_end = self._max_row - source_rows
+
+        for target_row in range(target_end, self._min_row - 1, -1):
+            # Calculate which source row to use (cycling through source rows)
+            source_offset = (target_end - target_row) % source_rows
+            source_row = self._max_row - source_offset
+
+            for col_idx in range(self._min_col, self._max_col + 1):
+                source_cell = self._ws._formula_ws.cell(source_row, col_idx)
+                target_cell = self._ws._formula_ws.cell(target_row, col_idx)
+                col_letter = get_column_letter(col_idx)
+
+                # Copy value, translating formula if needed
+                value = source_cell.value
+                if isinstance(value, str) and value.startswith("="):
+                    from_coord = f"{col_letter}{source_row}"
+                    to_coord = f"{col_letter}{target_row}"
+                    value = self._translate_formula(value, from_coord, to_coord)
+                target_cell.value = value
+
+                if copy_styles:
+                    self._copy_cell_style(source_cell, target_cell)
+
+    def _fill_left(self, copy_styles: bool, source_cols: int = 1) -> None:
+        """Fill leftward - last column(s) are source, repeating as pattern."""
+        # Target cols end before source cols
+        target_end = self._max_col - source_cols
+
+        for target_col in range(target_end, self._min_col - 1, -1):
+            # Calculate which source column to use (cycling through source cols)
+            source_offset = (target_end - target_col) % source_cols
+            source_col = self._max_col - source_offset
+            source_col_letter = get_column_letter(source_col)
+            target_col_letter = get_column_letter(target_col)
+
+            for row_idx in range(self._min_row, self._max_row + 1):
+                source_cell = self._ws._formula_ws.cell(row_idx, source_col)
+                target_cell = self._ws._formula_ws.cell(row_idx, target_col)
+
+                # Copy value, translating formula if needed
+                value = source_cell.value
+                if isinstance(value, str) and value.startswith("="):
+                    from_coord = f"{source_col_letter}{row_idx}"
+                    to_coord = f"{target_col_letter}{row_idx}"
+                    value = self._translate_formula(value, from_coord, to_coord)
+                target_cell.value = value
+
+                if copy_styles:
+                    self._copy_cell_style(source_cell, target_cell)
+
     def __repr__(self) -> str:
         return f"<RangeProxy '{self._ws._formula_ws.title}'!{self._range_ref}>"
 
@@ -445,6 +637,78 @@ class CellProxy:
         if isinstance(val, str) and val.startswith("="):
             return val
         return None
+
+    @property
+    def font(self) -> Font:
+        """Get font style."""
+        return self._formula_cell.font  # type: ignore[return-value]
+
+    @font.setter
+    def font(self, value: Font) -> None:
+        """Set font style."""
+        if self._on_write:
+            self._on_write()
+        self._formula_cell.font = value
+
+    @property
+    def fill(self) -> PatternFill | GradientFill:
+        """Get fill style."""
+        return self._formula_cell.fill  # type: ignore[return-value]
+
+    @fill.setter
+    def fill(self, value: PatternFill | GradientFill) -> None:
+        """Set fill style."""
+        if self._on_write:
+            self._on_write()
+        self._formula_cell.fill = value
+
+    @property
+    def border(self) -> Border:
+        """Get border style."""
+        return self._formula_cell.border  # type: ignore[return-value]
+
+    @border.setter
+    def border(self, value: Border) -> None:
+        """Set border style."""
+        if self._on_write:
+            self._on_write()
+        self._formula_cell.border = value
+
+    @property
+    def number_format(self) -> str:
+        """Get number format string."""
+        return self._formula_cell.number_format  # type: ignore[return-value]
+
+    @number_format.setter
+    def number_format(self, value: str) -> None:
+        """Set number format string."""
+        if self._on_write:
+            self._on_write()
+        self._formula_cell.number_format = value
+
+    @property
+    def alignment(self) -> Alignment:
+        """Get alignment style."""
+        return self._formula_cell.alignment  # type: ignore[return-value]
+
+    @alignment.setter
+    def alignment(self, value: Alignment) -> None:
+        """Set alignment style."""
+        if self._on_write:
+            self._on_write()
+        self._formula_cell.alignment = value
+
+    @property
+    def protection(self) -> Protection:
+        """Get protection settings."""
+        return self._formula_cell.protection  # type: ignore[return-value]
+
+    @protection.setter
+    def protection(self, value: Protection) -> None:
+        """Set protection settings."""
+        if self._on_write:
+            self._on_write()
+        self._formula_cell.protection = value
 
     # Forward all other attributes to formula cell
     def __getattr__(self, name: str) -> Any:
@@ -531,6 +795,29 @@ class WorksheetProxy:
         if self._on_write:
             self._on_write()
         self._formula_ws[key] = value
+
+    def get_cell(self, ref: str) -> CellProxy:
+        """Get a single cell by reference string like 'A1'.
+
+        This is a type-safe alternative to __getitem__ for single cell access.
+
+        Args:
+            ref: Cell reference like 'A1'
+
+        Returns:
+            CellProxy for the cell
+
+        Raises:
+            ValueError: If ref is a range (contains ':')
+        """
+        if ":" in ref:
+            raise ValueError(
+                f"get_cell() only accepts single cell refs, not ranges: {ref}"
+            )
+
+        result = self[ref]
+        # At runtime, single cell access always returns CellProxy
+        return result  # type: ignore[return-value]
 
     def cell(self, row: int, column: int, value: Any = None) -> CellProxy:
         """Access cell by row/column index."""
