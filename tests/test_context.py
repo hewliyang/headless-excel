@@ -545,6 +545,80 @@ class TestRangeApplyStyle:
                     assert ctx.active[f"{col}{row}"].font.size == 14  # type: ignore[union-attr]
 
 
+class TestRangeClear:
+    """Tests for RangeProxy.clear() method."""
+
+    def test_clear_values(self, tmp_path: Path):
+        """Test clearing values only."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active.range("A1:C3").values = [
+                [1, 2, 3],
+                [4, 5, 6],
+                [7, 8, 9],
+            ]
+            ctx.active.range("A1:C3").clear()
+
+            # All values should be None
+            values = ctx.active.range("A1:C3").values
+            assert values == [[None, None, None], [None, None, None], [None, None, None]]
+
+    def test_clear_preserves_styles_by_default(self, tmp_path: Path):
+        """Test that clear() preserves styles when styles=False."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = "Test"
+            ctx.active.range("A1").apply_style(font=Font(bold=True))
+            ctx.active.range("A1").clear()
+            ctx.workbook.save(path)
+
+        with ExcelContext(path) as ctx:
+            assert ctx.active["A1"].value is None  # type: ignore[union-attr]
+            assert ctx.active["A1"].font.bold is True  # type: ignore[union-attr]
+
+    def test_clear_with_styles(self, tmp_path: Path):
+        """Test clearing values and styles."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = "Test"
+            ctx.active.range("A1").apply_style(
+                font=Font(bold=True),
+                fill=PatternFill(start_color="FF0000", fill_type="solid"),
+                number_format="0.00",
+            )
+            ctx.active.range("A1").clear(styles=True)
+            ctx.workbook.save(path)
+
+        with ExcelContext(path) as ctx:
+            cell: CellProxy = ctx.active["A1"]  # type: ignore[assignment]
+            assert cell.value is None
+            # Styles should be reset to defaults
+            assert cell.font.bold is not True
+            assert cell.number_format == "General"
+
+    def test_clear_formulas(self, tmp_path: Path):
+        """Test that clear() removes formulas."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = 10
+            ctx.active["A2"] = "=A1*2"
+            ctx.active.range("A2").clear()
+
+            assert ctx.active["A2"].formula is None  # type: ignore[union-attr]
+            assert ctx.active["A2"].value is None  # type: ignore[union-attr]
+
+    def test_clear_marks_dirty(self, tmp_path: Path):
+        """Test that clear() marks context as dirty."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.active["A1"] = 10
+            ctx.sync()
+            assert not ctx._dirty
+
+            ctx.active.range("A1").clear()
+            assert ctx._dirty
+
+
 class TestSheetFormulas:
     """Tests for WorksheetProxy.formulas property."""
 

@@ -322,6 +322,31 @@ class RangeProxy:
         result = "\n".join(lines)
         return result
 
+    def clear(self, styles: bool = False) -> None:
+        """Clear cell values (and optionally styles) in the range.
+
+        Args:
+            styles: If True, also reset cell styles to defaults
+
+        Example:
+            >>> ws.range("A1:C3").clear()  # Clear values only
+            >>> ws.range("A1:C3").clear(styles=True)  # Clear values and styles
+        """
+        if self._on_write:
+            self._on_write()
+
+        for row_idx in range(self._min_row, self._max_row + 1):
+            for col_idx in range(self._min_col, self._max_col + 1):
+                cell = self._ws._formula_ws.cell(row_idx, col_idx)
+                cell.value = None
+                if styles:
+                    cell.font = Font()
+                    cell.fill = PatternFill()
+                    cell.alignment = Alignment()
+                    cell.border = Border()
+                    cell.protection = Protection()
+                    cell.number_format = "General"
+
     def apply_style(
         self,
         font: Font | None = None,
