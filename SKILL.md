@@ -1,6 +1,6 @@
 ---
 name: xlsx
-description: "Creating & editing with Excel workbooks"
+description: "Creating & editing Excel workbooks"
 ---
 
 # headless-excel
