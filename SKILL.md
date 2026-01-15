@@ -126,6 +126,13 @@ with create("model.xlsx") as ctx:
     print(ws.range("B2:E5").shape)  # (4, 4)
 ```
 
+## Clearing Ranges
+
+```py
+ws.range("A1:C3").clear()              # Clear values only
+ws.range("A1:C3").clear(styles=True)   # Clear values and reset styles
+```
+
 ## Auto Fill (Like Excel Drag Handle)
 
 ```py
