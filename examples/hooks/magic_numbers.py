@@ -8,6 +8,9 @@ from openpyxl.formula.tokenizer import Tokenizer
 
 from headless_excel import ExcelContext, on_exit
 
+# Common constants that aren't "magic"
+ALLOWED_CONSTANTS = {0, 1, -1, 100}
+
 
 def _extract_magic_numbers(formula: str) -> list[float]:
     """Extract magic numbers from a formula using openpyxl tokenizer."""
@@ -31,7 +34,9 @@ def _extract_magic_numbers(formula: str) -> list[float]:
         elif t.type == "OPERAND" and t.subtype == "NUMBER":
             # Magic if preceded by infix operator AND not inside function args
             if func_depth == 0 or prev_type == "OPERATOR-INFIX":
-                numbers.append(float(t.value))
+                num = float(t.value)
+                if num not in ALLOWED_CONSTANTS:
+                    numbers.append(num)
         prev_type = t.type
     return numbers
 
