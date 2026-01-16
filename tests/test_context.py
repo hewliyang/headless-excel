@@ -132,16 +132,17 @@ class TestCreate:
         with run(path) as ctx:
             assert ctx.active["A1"].value == "Replaced"  # type: ignore[union-attr]
 
-    def test_create_manual_sync_does_not_raise_on_exit(self, tmp_path: Path):
-        """Test that manual sync means user handles errors - no auto-raise on exit.
+    def test_create_manual_sync_prints_errors_on_exit(self, tmp_path: Path, capsys):
+        """Test that manual sync with errors prints to stderr on exit.
 
-        This prevents duplicate error output when user prints the SyncResult
-        and raise_on_errors=True is set on the context manager.
+        This ensures agents can't miss errors by ignoring sync() return value.
+        Errors are always printed at context exit when verbose_errors=True.
+        File is still saved successfully - these are just formula errors.
         """
         path = tmp_path / "test.xlsx"
 
-        # Should NOT raise - user manually synced, so they're handling errors
-        with create(path, raise_on_errors=True) as ctx:
+        # Should complete without exception - file is saved
+        with create(path, verbose_errors=True) as ctx:
             ws = ctx.active
             ws["A1"] = 100
             ws["A2"] = "=A1+Sheet2!A1"
@@ -149,30 +150,40 @@ class TestCreate:
             result = ctx.sync(raise_on_errors=False)
             assert not result.success
             assert result.total_errors == 1
-            # User saw the errors, they handle it - no SystemExit on exit
 
-    def test_create_raise_on_errors_without_manual_sync(self, tmp_path: Path):
-        """Test that raise_on_errors in create() works with auto_sync."""
+        # Errors printed to stderr
+        captured = capsys.readouterr()
+        assert "#NAME?" in captured.err
+        # File was saved
+        assert path.exists()
+
+    def test_create_verbose_errors_prints_to_stderr(self, tmp_path: Path, capsys):
+        """Test that verbose_errors=True prints errors to stderr."""
         path = tmp_path / "test.xlsx"
 
-        with pytest.raises(SystemExit) as exc_info:
-            with create(path, raise_on_errors=True) as ctx:
-                ws = ctx.active
-                ws["A1"] = 100
-                ws["A2"] = "=A1+Sheet2!A1"
-
-        assert "Formula errors" in str(exc_info.value)
-        assert "#NAME?" in str(exc_info.value)
-
-    def test_create_raise_on_errors_false(self, tmp_path: Path):
-        """Test that raise_on_errors=False does not raise."""
-        path = tmp_path / "test.xlsx"
-
-        with create(path, raise_on_errors=False) as ctx:
+        with create(path, verbose_errors=True) as ctx:
             ws = ctx.active
             ws["A1"] = 100
             ws["A2"] = "=A1+Sheet2!A1"
 
+        # Errors printed to stderr, file still saved
+        captured = capsys.readouterr()
+        assert "SyncResult(success=False" in captured.err
+        assert "#NAME?" in captured.err
+        assert path.exists()
+
+    def test_create_verbose_errors_false(self, tmp_path: Path, capsys):
+        """Test that verbose_errors=False suppresses error output."""
+        path = tmp_path / "test.xlsx"
+
+        with create(path, verbose_errors=False) as ctx:
+            ws = ctx.active
+            ws["A1"] = 100
+            ws["A2"] = "=A1+Sheet2!A1"
+
+        # No errors printed
+        captured = capsys.readouterr()
+        assert "#NAME?" not in captured.err
         assert path.exists()
 
 
@@ -1461,7 +1472,7 @@ class TestFindErrors:
         """Test find_errors on RangeProxy after sync."""
         path = tmp_path / "test.xlsx"
 
-        with create(path, raise_on_errors=False) as ctx:
+        with create(path, verbose_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 10
             ws["A2"] = 0
@@ -1484,7 +1495,7 @@ class TestFindErrors:
         """Test find_errors returns empty dict when no errors."""
         path = tmp_path / "test.xlsx"
 
-        with create(path, raise_on_errors=False) as ctx:
+        with create(path, verbose_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 10
             ws["A2"] = 2
@@ -1511,7 +1522,7 @@ class TestFindErrors:
         """Test find_errors on WorksheetProxy after sync."""
         path = tmp_path / "test.xlsx"
 
-        with create(path, raise_on_errors=False) as ctx:
+        with create(path, verbose_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 10
             ws["A2"] = 0
@@ -1530,7 +1541,7 @@ class TestFindErrors:
         """Test find_errors returns empty dict when no errors on sheet."""
         path = tmp_path / "test.xlsx"
 
-        with create(path, raise_on_errors=False) as ctx:
+        with create(path, verbose_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 10
             ws["A2"] = "=A1*2"
@@ -1544,7 +1555,7 @@ class TestFindErrors:
         """Test find_errors on ExcelContext with single sheet."""
         path = tmp_path / "test.xlsx"
 
-        with create(path, raise_on_errors=False) as ctx:
+        with create(path, verbose_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 0
             ws["A2"] = "=1/A1"  # #DIV/0!
@@ -1560,7 +1571,7 @@ class TestFindErrors:
         """Test find_errors on ExcelContext aggregates from all sheets."""
         path = tmp_path / "test.xlsx"
 
-        with create(path, raise_on_errors=False) as ctx:
+        with create(path, verbose_errors=False) as ctx:
             ws1 = ctx.create_sheet("Sheet1")
             ws1["A1"] = 0
             ws1["A2"] = "=1/A1"  # #DIV/0!
@@ -1584,7 +1595,7 @@ class TestFindErrors:
         """Test find_errors returns empty dict when no errors in workbook."""
         path = tmp_path / "test.xlsx"
 
-        with create(path, raise_on_errors=False) as ctx:
+        with create(path, verbose_errors=False) as ctx:
             ws = ctx.active
             ws["A1"] = 10
             ws["A2"] = "=A1*2"

@@ -270,12 +270,45 @@ def _get_hook_name(hook: object) -> str:
     return getattr(hook, "__name__", repr(hook))
 
 
+def _run_hook_with_prefix(
+    hook: object, run_fn: Callable[[], None], hook_type: str
+) -> None:
+    """Run a hook, capturing stdout and prefixing each line.
+
+    Args:
+        hook: The hook function (for getting name)
+        run_fn: Zero-arg function that actually calls the hook
+        hook_type: Type of hook for prefix (e.g., "pre-sync", "post-sync", "on-exit")
+    """
+    import io
+    import sys
+
+    hook_name = _get_hook_name(hook)
+    prefix = f"[{hook_type}:{hook_name}]"
+
+    # Capture stdout
+    old_stdout = sys.stdout
+    captured = io.StringIO()
+    sys.stdout = captured
+
+    try:
+        run_fn()
+    finally:
+        sys.stdout = old_stdout
+
+    # Print captured output with prefix
+    output = captured.getvalue()
+    if output:
+        for line in output.rstrip("\n").split("\n"):
+            print(f"{prefix} {line}")
+
+
 def run_pre_sync_hooks(ctx: ExcelContext) -> None:
     """Run all pre-sync hooks."""
     registry = get_registry()
     for hook in registry.pre_sync:
         try:
-            hook(ctx)
+            _run_hook_with_prefix(hook, lambda h=hook: h(ctx), "pre-sync")
         except Exception as e:
             logger.error(f"Pre-sync hook {_get_hook_name(hook)} failed: {e}")
             raise
@@ -286,7 +319,7 @@ def run_post_sync_hooks(ctx: ExcelContext, result: SyncResult) -> None:
     registry = get_registry()
     for hook in registry.post_sync:
         try:
-            hook(ctx, result)
+            _run_hook_with_prefix(hook, lambda h=hook: h(ctx, result), "post-sync")
         except Exception as e:
             logger.error(f"Post-sync hook {_get_hook_name(hook)} failed: {e}")
             raise
@@ -297,7 +330,7 @@ def run_on_exit_hooks(ctx: ExcelContext) -> None:
     registry = get_registry()
     for hook in registry.on_exit:
         try:
-            hook(ctx)
+            _run_hook_with_prefix(hook, lambda h=hook: h(ctx), "on-exit")
         except Exception as e:
             logger.error(f"On-exit hook {_get_hook_name(hook)} failed: {e}")
             raise

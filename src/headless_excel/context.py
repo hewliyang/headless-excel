@@ -142,6 +142,7 @@ class ExcelContext:
         self._dirty = False
         self._is_new_workbook = create
         self._first_sheet_created = False
+        self._last_sync_result: SyncResult | None = None
 
         if create:
             self._workbook = Workbook()
@@ -338,6 +339,8 @@ class ExcelContext:
             error_details=error_details,
         )
 
+        self._last_sync_result = sync_result
+
         run_post_sync_hooks(self, sync_result)
 
         if raise_on_errors:
@@ -481,7 +484,7 @@ def _run_context(
     path: str | Path,
     create_mode: bool,
     auto_sync: bool,
-    raise_on_errors: bool,
+    verbose_errors: bool,
     recalc_timeout: int,
 ) -> Generator[ExcelContext, None, None]:
     """Internal context manager for Excel operations.
@@ -491,6 +494,8 @@ def _run_context(
     - post_sync: after each sync()
     - on_exit: when context manager exits
     """
+    import sys
+
     ctx = ExcelContext(
         path,
         create=create_mode,
@@ -499,17 +504,15 @@ def _run_context(
     try:
         yield ctx
 
-        # Only sync if there were actual write operations
+        # Sync if there were write operations since last sync
         if auto_sync and ctx._dirty:
-            result = ctx.sync(raise_on_errors=False)
-            if raise_on_errors and not result.success:
-                err = FormulaError(
-                    errors=result.errors,
-                    total=result.total_errors,
-                    error_details=result.error_details,
-                )
-                # hack to suppress traceback to reduce context pollution
-                raise SystemExit(str(err))
+            ctx.sync(raise_on_errors=False)
+
+        # Print errors from any sync (manual or auto) to stderr
+        # File is saved successfully - these are just formula errors in cells
+        if verbose_errors and ctx._last_sync_result and not ctx._last_sync_result.success:
+            for line in str(ctx._last_sync_result).split("\n"):
+                print(f"[post-sync:errors] {line}", file=sys.stderr)
 
         run_on_exit_hooks(ctx)
     finally:
@@ -520,7 +523,7 @@ def _run_context(
 def run(
     path: str | Path,
     auto_sync: bool = True,
-    raise_on_errors: bool = True,
+    verbose_errors: bool = True,
     recalc_timeout: int = 30,
 ) -> Generator[ExcelContext, None, None]:
     """Open an existing Excel file for operations.
@@ -552,8 +555,8 @@ def run(
     Args:
         path: Path to existing Excel file
         auto_sync: If True, automatically sync on context exit
-        raise_on_errors: If True, raise FormulaError on sync errors
-            else, raises SystemExit with error message to suppress traceback
+        verbose_errors: If True, print formula errors to stderr on exit.
+            File is always saved - these are just errors in cell values.
         recalc_timeout: Timeout in seconds for LibreOffice recalculation
 
     Yields:
@@ -566,7 +569,7 @@ def run(
         path,
         False,
         auto_sync,
-        raise_on_errors,
+        verbose_errors,
         recalc_timeout,
     )
 
@@ -576,7 +579,7 @@ def create(
     path: str | Path,
     overwrite: bool = False,
     auto_sync: bool = True,
-    raise_on_errors: bool = True,
+    verbose_errors: bool = True,
     recalc_timeout: int = 30,
 ) -> Generator[ExcelContext, None, None]:
     """Create a new Excel file.
@@ -603,8 +606,8 @@ def create(
         path: Path for the new Excel file
         overwrite: If True, overwrite existing file; if False, raise FileExistsError
         auto_sync: If True, automatically sync on context exit
-        raise_on_errors: If True, raise FormulaError on sync errors
-            else, raises SystemExit with error message to suppress traceback
+        verbose_errors: If True, print formula errors to stderr on exit.
+            File is always saved - these are just errors in cell values.
         recalc_timeout: Timeout in seconds for LibreOffice recalculation
 
     Yields:
@@ -622,6 +625,6 @@ def create(
         path,
         True,
         auto_sync,
-        raise_on_errors,
+        verbose_errors,
         recalc_timeout,
     )

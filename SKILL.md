@@ -176,9 +176,8 @@ with create("model.xlsx") as ctx:
     ctx.active['B1'] = 10
     ctx.active['C1'] = 0  # Division by zero!
 
-    # Just print the sync result - shows errors with context
-    # Note: if manually syncing - context manager will not raise on exit
-    print(ctx.sync())
+    ctx.sync()
+    # Errors always printed to stderr on context exit:
     # SyncResult(success=False, total_errors=1):
     #   Sheet!A1: #DIV/0! formula==B1/C1 inputs={Sheet!B1=10, Sheet!C1=0}
 ```

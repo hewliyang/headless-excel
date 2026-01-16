@@ -44,7 +44,7 @@ with run("model.xlsx") as ctx:
 
 ## API
 
-### `create(path, overwrite=False, auto_sync=True, raise_on_errors=True, ...)`
+### `create(path, overwrite=False, auto_sync=True, verbose_errors=True, ...)`
 
 Create a new Excel file. By default, auto-applies and lints financial color conventions on exit.
 
@@ -61,7 +61,7 @@ with create("existing.xlsx", overwrite=True) as ctx:
     ctx.active["A1"] = "Fresh start"
 ```
 
-### `run(path, auto_sync=True, raise_on_errors=True, lint_financial_colors=True, auto_financial_colors=True)`
+### `run(path, auto_sync=True, verbose_errors=True, ...)`
 
 Open an existing Excel file. Similar to OfficeJS `Excel.run()`. By default, auto-applies and lints financial color conventions on exit.
 
@@ -74,10 +74,10 @@ with run("existing.xlsx", auto_sync=False) as ctx:
     result = ctx.sync()
     print(ctx.active["A1"].value)
 
-# Raise on formula errors
-with run("model.xlsx", raise_on_errors=True) as ctx:
+# Formula errors printed to stderr
+with run("model.xlsx", verbose_errors=True) as ctx:
     ctx.active["A1"] = "=INVALID_REF"
-    # Raises FormulaError on exit
+    # Errors like #NAME? printed to stderr on exit
 ```
 
 ### `ExcelContext`

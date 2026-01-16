@@ -74,6 +74,7 @@ def _color_name(color_code: str | None) -> str:
 @pre_sync
 def auto_financial_colors(ctx: ExcelContext) -> None:
     """Apply financial modeling colors before each sync."""
+    colored = 0
     for ws in ctx.workbook.worksheets:
         for row in ws._formula_ws.iter_rows():
             for cell in row:
@@ -91,6 +92,9 @@ def auto_financial_colors(ctx: ExcelContext) -> None:
                         strike=old_font.strike,
                         color=color,
                     )
+                    colored += 1
+    if colored > 0:
+        print(f"Applied colors to {colored} cell(s)")
 
 
 @on_exit
