@@ -510,7 +510,11 @@ def _run_context(
 
         # Print errors from any sync (manual or auto) to stderr
         # File is saved successfully - these are just formula errors in cells
-        if verbose_errors and ctx._last_sync_result and not ctx._last_sync_result.success:
+        if (
+            verbose_errors
+            and ctx._last_sync_result
+            and not ctx._last_sync_result.success
+        ):
             for line in str(ctx._last_sync_result).split("\n"):
                 print(f"[post-sync:errors] {line}", file=sys.stderr)
 

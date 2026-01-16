@@ -872,9 +872,9 @@ class TestAutoFill:
             ctx.sync()
 
             # Values should be calculated: 10*2=20, 10*3=30, 10*4=40
-            assert ctx.active["D1"].value == 20
-            assert ctx.active["D2"].value == 30
-            assert ctx.active["D3"].value == 40
+            assert ctx.active["D1"].value == 20  # type: ignore[union-attr]
+            assert ctx.active["D2"].value == 30  # type: ignore[union-attr]
+            assert ctx.active["D3"].value == 40  # type: ignore[union-attr]
 
     def test_formula_after_sync_calculates(self, tmp_path: Path):
         """Test that any formula added after sync() is calculated.
@@ -891,7 +891,7 @@ class TestAutoFill:
             ctx.active["C1"] = "=A1+B1"
             ctx.sync()
 
-            assert ctx.active["C1"].value == 15
+            assert ctx.active["C1"].value == 15  # type: ignore[union-attr]
 
 
 class TestSheetFormulas:
