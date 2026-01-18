@@ -324,6 +324,21 @@ class RangeProxy:
         if self._on_write:
             self._on_write()
 
+        # Unmerge any merged cell ranges that overlap with this range
+        merged_to_remove = []
+        for merged_range in self._ws._formula_ws.merged_cells.ranges:
+            # Check if merged range overlaps with clear range
+            if (
+                merged_range.min_row <= self._max_row
+                and merged_range.max_row >= self._min_row
+                and merged_range.min_col <= self._max_col
+                and merged_range.max_col >= self._min_col
+            ):
+                merged_to_remove.append(str(merged_range))
+
+        for merged_addr in merged_to_remove:
+            self._ws._formula_ws.unmerge_cells(merged_addr)
+
         for row_idx in range(self._min_row, self._max_row + 1):
             for col_idx in range(self._min_col, self._max_col + 1):
                 cell = self._ws._formula_ws.cell(row_idx, col_idx)
@@ -1042,7 +1057,7 @@ class WorkbookProxy:
 
         formula_ws = self._formula_wb[key]
         values_ws = None
-        if self._values_wb is not None:
+        if self._values_wb is not None and key in self._values_wb.sheetnames:
             values_ws = self._values_wb[key]
         proxy = WorksheetProxy(formula_ws, values_ws, self._on_write)
         self._sheet_cache[key] = proxy
@@ -1061,8 +1076,8 @@ class WorkbookProxy:
             return self._sheet_cache[sheet_name]
 
         values_ws = None
-        if self._values_wb is not None:
-            values_ws = self._values_wb.active
+        if self._values_wb is not None and sheet_name in self._values_wb.sheetnames:
+            values_ws = self._values_wb[sheet_name]
         proxy = WorksheetProxy(formula_ws, values_ws, self._on_write)
         self._sheet_cache[sheet_name] = proxy
         return proxy
@@ -1074,7 +1089,7 @@ class WorkbookProxy:
             self._on_write()
         if isinstance(sheet, str):
             self._formula_wb.active = self._formula_wb[sheet]
-            if self._values_wb is not None:
+            if self._values_wb is not None and sheet in self._values_wb.sheetnames:
                 self._values_wb.active = self._values_wb[sheet]
         elif isinstance(sheet, WorksheetProxy):
             self._formula_wb.active = sheet._formula_ws

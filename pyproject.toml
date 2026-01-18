@@ -26,6 +26,9 @@ classifiers = [
 ]
 dependencies = ["openpyxl>=3.1.0"]
 
+[project.scripts]
+headless-excel = "headless_excel.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/brightriver/headless-excel"
 Repository = "https://github.com/brightriver/headless-excel"

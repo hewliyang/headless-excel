@@ -633,6 +633,75 @@ class TestRangeClear:
             ctx.active.range("A1").clear()
             assert ctx._dirty
 
+    def test_clear_unmerges_merged_cells(self, tmp_path: Path):
+        """Test that clear() unmerges merged cells before clearing."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = "Merged Title"
+            ws._formula_ws.merge_cells("A1:C1")
+            ws["A2"] = "Data"
+
+            # This should not raise an error
+            ws.range("A1:C2").clear()
+
+            # Values should be cleared
+            assert ws["A1"].value is None
+            assert ws["A2"].value is None
+
+            # Merged range should be removed
+            assert len(list(ws._formula_ws.merged_cells.ranges)) == 0
+
+    def test_clear_unmerges_only_overlapping_ranges(self, tmp_path: Path):
+        """Test that clear() only unmerges ranges that overlap with the clear range."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = "Merge 1"
+            ws._formula_ws.merge_cells("A1:B1")
+            ws["D1"] = "Merge 2"
+            ws._formula_ws.merge_cells("D1:E1")
+
+            # Clear only the first merged range
+            ws.range("A1:B2").clear()
+
+            # First merge should be gone
+            assert ws["A1"].value is None
+
+            # Second merge should still exist
+            merged_ranges = [str(r) for r in ws._formula_ws.merged_cells.ranges]
+            assert "D1:E1" in merged_ranges
+            assert "A1:B1" not in merged_ranges
+
+    def test_clear_partial_overlap_unmerges(self, tmp_path: Path):
+        """Test that clear() unmerges when range partially overlaps merged cells."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = "Wide Merge"
+            ws._formula_ws.merge_cells("A1:D1")
+
+            # Clear only part of the merged range
+            ws.range("B1:C1").clear()
+
+            # Merge should be removed (can't have partial merge)
+            assert len(list(ws._formula_ws.merged_cells.ranges)) == 0
+
+    def test_clear_with_styles_unmerges(self, tmp_path: Path):
+        """Test that clear(styles=True) also handles merged cells."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ws = ctx.active
+            ws["A1"] = "Styled Merge"
+            ws._formula_ws.merge_cells("A1:C1")
+            ws.range("A1").apply_style(font=Font(bold=True))
+
+            ws.range("A1:C1").clear(styles=True)
+
+            assert ws["A1"].value is None
+            assert ws["A1"].font.bold is not True
+            assert len(list(ws._formula_ws.merged_cells.ranges)) == 0
+
 
 class TestAutoFill:
     """Tests for RangeProxy.auto_fill() method."""
