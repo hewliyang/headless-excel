@@ -646,11 +646,11 @@ class TestRangeClear:
             ws.range("A1:C2").clear()
 
             # Values should be cleared
-            assert ws["A1"].value is None
-            assert ws["A2"].value is None
+            assert ws.cell(1, 1).value is None
+            assert ws.cell(2, 1).value is None
 
             # Merged range should be removed
-            assert len(list(ws._formula_ws.merged_cells.ranges)) == 0
+            assert len(list(ws._formula_ws.merged_cells.ranges)) == 0  # type: ignore[arg-type]
 
     def test_clear_unmerges_only_overlapping_ranges(self, tmp_path: Path):
         """Test that clear() only unmerges ranges that overlap with the clear range."""
@@ -666,10 +666,10 @@ class TestRangeClear:
             ws.range("A1:B2").clear()
 
             # First merge should be gone
-            assert ws["A1"].value is None
+            assert ws.cell(1, 1).value is None
 
             # Second merge should still exist
-            merged_ranges = [str(r) for r in ws._formula_ws.merged_cells.ranges]
+            merged_ranges = [str(r) for r in ws._formula_ws.merged_cells.ranges]  # type: ignore[union-attr]
             assert "D1:E1" in merged_ranges
             assert "A1:B1" not in merged_ranges
 
@@ -685,7 +685,7 @@ class TestRangeClear:
             ws.range("B1:C1").clear()
 
             # Merge should be removed (can't have partial merge)
-            assert len(list(ws._formula_ws.merged_cells.ranges)) == 0
+            assert len(list(ws._formula_ws.merged_cells.ranges)) == 0  # type: ignore[arg-type]
 
     def test_clear_with_styles_unmerges(self, tmp_path: Path):
         """Test that clear(styles=True) also handles merged cells."""
@@ -698,9 +698,9 @@ class TestRangeClear:
 
             ws.range("A1:C1").clear(styles=True)
 
-            assert ws["A1"].value is None
-            assert ws["A1"].font.bold is not True
-            assert len(list(ws._formula_ws.merged_cells.ranges)) == 0
+            assert ws.cell(1, 1).value is None
+            assert ws.cell(1, 1).font.bold is not True
+            assert len(list(ws._formula_ws.merged_cells.ranges)) == 0  # type: ignore[arg-type]
 
 
 class TestAutoFill:

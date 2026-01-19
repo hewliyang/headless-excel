@@ -326,7 +326,7 @@ class RangeProxy:
 
         # Unmerge any merged cell ranges that overlap with this range
         merged_to_remove = []
-        for merged_range in self._ws._formula_ws.merged_cells.ranges:
+        for merged_range in self._ws._formula_ws.merged_cells.ranges:  # type: ignore[union-attr]
             # Check if merged range overlaps with clear range
             if (
                 merged_range.min_row <= self._max_row

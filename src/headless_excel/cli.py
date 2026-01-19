@@ -110,7 +110,7 @@ def cmd_check() -> int:
                     ctx.active["A2"] = 3
                     ctx.active["A3"] = "=A1+A2"
                     ctx.sync()
-                    result = ctx.active["A3"].value
+                    result = ctx.active.cell(3, 1).value
 
                 if result == 5:
                     print("✓ Recalc test passed (2+3=5)")
