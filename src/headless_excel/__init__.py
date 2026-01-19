@@ -14,6 +14,7 @@ from headless_excel.errors import (
 from headless_excel.formats import NumberFormats
 from headless_excel.hooks import (
     ExtensionAPI,
+    HookOutput,
     clear_hooks,
     extension,
     get_discovery_errors,
@@ -37,6 +38,7 @@ __all__ = [
     "run",
     # Hooks
     "ExtensionAPI",
+    "HookOutput",
     "clear_hooks",
     "extension",
     "get_discovery_errors",

@@ -22,6 +22,16 @@ Usage:
     @post_sync
     def after_sync(ctx: ExcelContext, result: SyncResult) -> None:
         print(f"Sync complete, errors: {result.total_errors}")
+
+Output Configuration:
+    Hook output is captured and prefixed. By default, output goes to stderr.
+    You can configure this per-hook:
+
+    @pre_sync(output="stdout")  # send to stdout instead
+    def my_hook(ctx): ...
+
+    @pre_sync(output="none")  # suppress output entirely
+    def quiet_hook(ctx): ...
 """
 
 from __future__ import annotations
@@ -31,7 +41,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Generic, Literal, TypeVar, overload
 
 if TYPE_CHECKING:
     from headless_excel.context import ExcelContext, SyncResult
@@ -48,6 +58,10 @@ OnExitFn = Callable[["ExcelContext"], None]
 
 F = TypeVar("F", PreSyncFn, PostSyncFn, OnExitFn)
 
+HookOutput = Literal["stderr", "stdout", "none"]
+
+T_Hook = TypeVar("T_Hook")
+
 
 # ============================================================================
 # Hook Registry
@@ -55,12 +69,20 @@ F = TypeVar("F", PreSyncFn, PostSyncFn, OnExitFn)
 
 
 @dataclass
+class HookEntry(Generic[T_Hook]):
+    """A registered hook with its output configuration."""
+
+    fn: T_Hook
+    output: HookOutput = "stderr"
+
+
+@dataclass
 class HookRegistry:
     """Container for registered hooks."""
 
-    pre_sync: list[PreSyncFn] = field(default_factory=list)
-    post_sync: list[PostSyncFn] = field(default_factory=list)
-    on_exit: list[OnExitFn] = field(default_factory=list)
+    pre_sync: list[HookEntry[PreSyncFn]] = field(default_factory=list)
+    post_sync: list[HookEntry[PostSyncFn]] = field(default_factory=list)
+    on_exit: list[HookEntry[OnExitFn]] = field(default_factory=list)
 
     _discovered: bool = field(default=False, repr=False)
     _discovery_errors: list[str] = field(default_factory=list, repr=False)
@@ -83,11 +105,27 @@ _registry = HookRegistry()
 # ============================================================================
 
 
-def pre_sync(fn: PreSyncFn) -> PreSyncFn:
+@overload
+def pre_sync(fn: PreSyncFn) -> PreSyncFn: ...
+
+
+@overload
+def pre_sync(*, output: HookOutput = "stderr") -> Callable[[PreSyncFn], PreSyncFn]: ...
+
+
+def pre_sync(
+    fn: PreSyncFn | None = None, *, output: HookOutput = "stderr"
+) -> PreSyncFn | Callable[[PreSyncFn], PreSyncFn]:
     """Register a pre-sync hook.
 
     Called before each sync() operation (before save/recalc/reload).
     Use this to modify the workbook before it's saved.
+
+    Args:
+        output: Where to send captured output. Options:
+            - "stderr" (default): Print to stderr with prefix
+            - "stdout": Print to stdout with prefix
+            - "none": Suppress output entirely
 
     Example:
         from headless_excel import ExcelContext, pre_sync
@@ -96,16 +134,44 @@ def pre_sync(fn: PreSyncFn) -> PreSyncFn:
         def auto_format(ctx: ExcelContext) -> None:
             for ws in ctx.workbook.worksheets:
                 ws.auto_financial_colors()
+
+        @pre_sync(output="stdout")  # send to stdout instead
+        def verbose_hook(ctx: ExcelContext) -> None:
+            print("Processing...")
     """
-    _registry.pre_sync.append(fn)
-    return fn
+
+    def decorator(f: PreSyncFn) -> PreSyncFn:
+        _registry.pre_sync.append(HookEntry(f, output))
+        return f
+
+    if fn is not None:
+        return decorator(fn)
+    return decorator
 
 
-def post_sync(fn: PostSyncFn) -> PostSyncFn:
+@overload
+def post_sync(fn: PostSyncFn) -> PostSyncFn: ...
+
+
+@overload
+def post_sync(
+    *, output: HookOutput = "stderr"
+) -> Callable[[PostSyncFn], PostSyncFn]: ...
+
+
+def post_sync(
+    fn: PostSyncFn | None = None, *, output: HookOutput = "stderr"
+) -> PostSyncFn | Callable[[PostSyncFn], PostSyncFn]:
     """Register a post-sync hook.
 
     Called after each sync() operation (after save/recalc/reload).
     Use this to inspect results or perform validation.
+
+    Args:
+        output: Where to send captured output. Options:
+            - "stderr" (default): Print to stderr with prefix
+            - "stdout": Print to stdout with prefix
+            - "none": Suppress output entirely
 
     Example:
         from headless_excel import ExcelContext, SyncResult, post_sync
@@ -115,15 +181,37 @@ def post_sync(fn: PostSyncFn) -> PostSyncFn:
             if not result.success:
                 print(f"Sync had {result.total_errors} errors")
     """
-    _registry.post_sync.append(fn)
-    return fn
+
+    def decorator(f: PostSyncFn) -> PostSyncFn:
+        _registry.post_sync.append(HookEntry(f, output))
+        return f
+
+    if fn is not None:
+        return decorator(fn)
+    return decorator
 
 
-def on_exit(fn: OnExitFn) -> OnExitFn:
+@overload
+def on_exit(fn: OnExitFn) -> OnExitFn: ...
+
+
+@overload
+def on_exit(*, output: HookOutput = "stderr") -> Callable[[OnExitFn], OnExitFn]: ...
+
+
+def on_exit(
+    fn: OnExitFn | None = None, *, output: HookOutput = "stderr"
+) -> OnExitFn | Callable[[OnExitFn], OnExitFn]:
     """Register an on-exit hook.
 
     Called when the context manager exits (after final sync if any).
     Use this for linting, cleanup, or final validation.
+
+    Args:
+        output: Where to send captured output. Options:
+            - "stderr" (default): Print to stderr with prefix
+            - "stdout": Print to stdout with prefix
+            - "none": Suppress output entirely
 
     Example:
         from headless_excel import ExcelContext, on_exit
@@ -134,8 +222,14 @@ def on_exit(fn: OnExitFn) -> OnExitFn:
             if result.total_violations > 0:
                 print(result)
     """
-    _registry.on_exit.append(fn)
-    return fn
+
+    def decorator(f: OnExitFn) -> OnExitFn:
+        _registry.on_exit.append(HookEntry(f, output))
+        return f
+
+    if fn is not None:
+        return decorator(fn)
+    return decorator
 
 
 # ============================================================================
@@ -160,22 +254,86 @@ class ExtensionAPI:
                 nonlocal sync_count
                 sync_count += 1
                 print(f"Sync #{sync_count}")
+
+            @api.post_sync(output="stdout")  # configure output
+            def log_result(ctx: ExcelContext, result) -> None:
+                print(f"Done: {result.success}")
     """
 
-    def pre_sync(self, fn: PreSyncFn) -> PreSyncFn:
-        """Register a pre-sync hook."""
-        _registry.pre_sync.append(fn)
-        return fn
+    @overload
+    def pre_sync(self, fn: PreSyncFn) -> PreSyncFn: ...
 
-    def post_sync(self, fn: PostSyncFn) -> PostSyncFn:
-        """Register a post-sync hook."""
-        _registry.post_sync.append(fn)
-        return fn
+    @overload
+    def pre_sync(
+        self, *, output: HookOutput = "stderr"
+    ) -> Callable[[PreSyncFn], PreSyncFn]: ...
 
-    def on_exit(self, fn: OnExitFn) -> OnExitFn:
-        """Register an on-exit hook."""
-        _registry.on_exit.append(fn)
-        return fn
+    def pre_sync(
+        self, fn: PreSyncFn | None = None, *, output: HookOutput = "stderr"
+    ) -> PreSyncFn | Callable[[PreSyncFn], PreSyncFn]:
+        """Register a pre-sync hook.
+
+        Args:
+            output: Where to send output ("stderr", "stdout", or "none")
+        """
+
+        def decorator(f: PreSyncFn) -> PreSyncFn:
+            _registry.pre_sync.append(HookEntry(f, output))
+            return f
+
+        if fn is not None:
+            return decorator(fn)
+        return decorator
+
+    @overload
+    def post_sync(self, fn: PostSyncFn) -> PostSyncFn: ...
+
+    @overload
+    def post_sync(
+        self, *, output: HookOutput = "stderr"
+    ) -> Callable[[PostSyncFn], PostSyncFn]: ...
+
+    def post_sync(
+        self, fn: PostSyncFn | None = None, *, output: HookOutput = "stderr"
+    ) -> PostSyncFn | Callable[[PostSyncFn], PostSyncFn]:
+        """Register a post-sync hook.
+
+        Args:
+            output: Where to send output ("stderr", "stdout", or "none")
+        """
+
+        def decorator(f: PostSyncFn) -> PostSyncFn:
+            _registry.post_sync.append(HookEntry(f, output))
+            return f
+
+        if fn is not None:
+            return decorator(fn)
+        return decorator
+
+    @overload
+    def on_exit(self, fn: OnExitFn) -> OnExitFn: ...
+
+    @overload
+    def on_exit(
+        self, *, output: HookOutput = "stderr"
+    ) -> Callable[[OnExitFn], OnExitFn]: ...
+
+    def on_exit(
+        self, fn: OnExitFn | None = None, *, output: HookOutput = "stderr"
+    ) -> OnExitFn | Callable[[OnExitFn], OnExitFn]:
+        """Register an on-exit hook.
+
+        Args:
+            output: Where to send output ("stderr", "stdout", or "none")
+        """
+
+        def decorator(f: OnExitFn) -> OnExitFn:
+            _registry.on_exit.append(HookEntry(f, output))
+            return f
+
+        if fn is not None:
+            return decorator(fn)
+        return decorator
 
 
 ExtensionFactory = Callable[[ExtensionAPI], None]
@@ -271,7 +429,10 @@ def _get_hook_name(hook: object) -> str:
 
 
 def _run_hook_with_prefix(
-    hook: object, run_fn: Callable[[], None], hook_type: str
+    hook: object,
+    run_fn: Callable[[], None],
+    hook_type: str,
+    output: HookOutput = "stderr",
 ) -> None:
     """Run a hook, capturing stdout and prefixing each line.
 
@@ -279,6 +440,7 @@ def _run_hook_with_prefix(
         hook: The hook function (for getting name)
         run_fn: Zero-arg function that actually calls the hook
         hook_type: Type of hook for prefix (e.g., "pre-sync", "post-sync", "on-exit")
+        output: Where to send captured output ("stderr", "stdout", or "none")
     """
     import io
     import sys
@@ -296,43 +458,53 @@ def _run_hook_with_prefix(
     finally:
         sys.stdout = old_stdout
 
-    # Print captured output with prefix
-    output = captured.getvalue()
-    if output:
-        for line in output.rstrip("\n").split("\n"):
-            print(f"{prefix} {line}")
+    # Print captured output with prefix to configured destination
+    if output == "none":
+        return
+
+    captured_output = captured.getvalue()
+    if captured_output:
+        dest = sys.stderr if output == "stderr" else sys.stdout
+        for line in captured_output.rstrip("\n").split("\n"):
+            print(f"{prefix} {line}", file=dest)
 
 
 def run_pre_sync_hooks(ctx: ExcelContext) -> None:
     """Run all pre-sync hooks."""
     registry = get_registry()
-    for hook in registry.pre_sync:
+    for entry in registry.pre_sync:
         try:
-            _run_hook_with_prefix(hook, lambda h=hook: h(ctx), "pre-sync")
+            _run_hook_with_prefix(
+                entry.fn, lambda e=entry: e.fn(ctx), "pre-sync", entry.output
+            )
         except Exception as e:
-            logger.error(f"Pre-sync hook {_get_hook_name(hook)} failed: {e}")
+            logger.error(f"Pre-sync hook {_get_hook_name(entry.fn)} failed: {e}")
             raise
 
 
 def run_post_sync_hooks(ctx: ExcelContext, result: SyncResult) -> None:
     """Run all post-sync hooks."""
     registry = get_registry()
-    for hook in registry.post_sync:
+    for entry in registry.post_sync:
         try:
-            _run_hook_with_prefix(hook, lambda h=hook: h(ctx, result), "post-sync")
+            _run_hook_with_prefix(
+                entry.fn, lambda e=entry: e.fn(ctx, result), "post-sync", entry.output
+            )
         except Exception as e:
-            logger.error(f"Post-sync hook {_get_hook_name(hook)} failed: {e}")
+            logger.error(f"Post-sync hook {_get_hook_name(entry.fn)} failed: {e}")
             raise
 
 
 def run_on_exit_hooks(ctx: ExcelContext) -> None:
     """Run all on-exit hooks."""
     registry = get_registry()
-    for hook in registry.on_exit:
+    for entry in registry.on_exit:
         try:
-            _run_hook_with_prefix(hook, lambda h=hook: h(ctx), "on-exit")
+            _run_hook_with_prefix(
+                entry.fn, lambda e=entry: e.fn(ctx), "on-exit", entry.output
+            )
         except Exception as e:
-            logger.error(f"On-exit hook {_get_hook_name(hook)} failed: {e}")
+            logger.error(f"On-exit hook {_get_hook_name(entry.fn)} failed: {e}")
             raise
 
 

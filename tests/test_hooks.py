@@ -32,7 +32,8 @@ class TestHookDecorators:
             calls.append("pre_sync")
 
         registry = get_registry()
-        assert my_hook in registry.pre_sync
+        hook_fns = [entry.fn for entry in registry.pre_sync]
+        assert my_hook in hook_fns
 
     def test_post_sync_decorator(self):
         """@post_sync should register a post-sync hook."""
@@ -43,7 +44,8 @@ class TestHookDecorators:
             calls.append("post_sync")
 
         registry = get_registry()
-        assert my_hook in registry.post_sync
+        hook_fns = [entry.fn for entry in registry.post_sync]
+        assert my_hook in hook_fns
 
     def test_on_exit_decorator(self):
         """@on_exit should register an on-exit hook."""
@@ -54,7 +56,8 @@ class TestHookDecorators:
             calls.append("on_exit")
 
         registry = get_registry()
-        assert my_hook in registry.on_exit
+        hook_fns = [entry.fn for entry in registry.on_exit]
+        assert my_hook in hook_fns
 
 
 class TestExtensionFactory:
@@ -75,9 +78,9 @@ class TestExtensionFactory:
 
         registry = get_registry()
         # Check our hooks are registered (there may be others from discovery)
-        hook_names = [getattr(h, "__name__", "") for h in registry.pre_sync]
+        hook_names = [getattr(entry.fn, "__name__", "") for entry in registry.pre_sync]
         assert "hook1" in hook_names
-        hook_names = [getattr(h, "__name__", "") for h in registry.on_exit]
+        hook_names = [getattr(entry.fn, "__name__", "") for entry in registry.on_exit]
         assert "hook2" in hook_names
 
     def test_extension_with_state(self):
@@ -96,7 +99,7 @@ class TestExtensionFactory:
 
         # Simulate calling the hook twice
         registry = get_registry()
-        hook = registry.pre_sync[0]
+        hook_fn = registry.pre_sync[0].fn
 
         # Create a mock context (we just need something to pass)
         with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
@@ -104,8 +107,8 @@ class TestExtensionFactory:
 
         try:
             with create(path, overwrite=True, auto_sync=False) as ctx:
-                hook(ctx)
-                hook(ctx)
+                hook_fn(ctx)
+                hook_fn(ctx)
         finally:
             path.unlink(missing_ok=True)
 
@@ -200,7 +203,7 @@ def discovered_hook(ctx: ExcelContext) -> None:
 
         registry = get_registry()
         # Should have at least one hook with the right name
-        hook_names = [getattr(h, "__name__", "") for h in registry.pre_sync]
+        hook_names = [getattr(entry.fn, "__name__", "") for entry in registry.pre_sync]
         assert "discovered_hook" in hook_names
 
     def test_skip_private_files(self, tmp_path: Path):
@@ -218,7 +221,7 @@ def should_not_load(ctx: ExcelContext) -> None:
         _load_hooks_from_dir(tmp_path)
 
         registry = get_registry()
-        hook_names = [getattr(h, "__name__", "") for h in registry.pre_sync]
+        hook_names = [getattr(entry.fn, "__name__", "") for entry in registry.pre_sync]
         assert "should_not_load" not in hook_names
 
     def test_discovery_error_handling(self, tmp_path: Path):
@@ -232,6 +235,67 @@ def should_not_load(ctx: ExcelContext) -> None:
         errors = get_discovery_errors()
         assert len(errors) > 0
         assert "bad_hook.py" in errors[0]
+
+
+class TestHookOutputConfiguration:
+    """Test hook output configuration."""
+
+    def test_default_output_is_stderr(self):
+        """Hooks should default to stderr output."""
+
+        @pre_sync
+        def my_hook(ctx: ExcelContext) -> None:
+            pass
+
+        registry = get_registry()
+        # Find our hook
+        entry = next(e for e in registry.pre_sync if e.fn is my_hook)
+        assert entry.output == "stderr"
+
+    def test_output_stdout(self):
+        """Hooks can be configured for stdout output."""
+
+        @pre_sync(output="stdout")
+        def my_hook(ctx: ExcelContext) -> None:
+            pass
+
+        registry = get_registry()
+        entry = next(e for e in registry.pre_sync if e.fn is my_hook)
+        assert entry.output == "stdout"
+
+    def test_output_none(self):
+        """Hooks can be configured to suppress output."""
+
+        @post_sync(output="none")
+        def my_hook(ctx: ExcelContext, result: SyncResult) -> None:
+            pass
+
+        registry = get_registry()
+        entry = next(e for e in registry.post_sync if e.fn is my_hook)
+        assert entry.output == "none"
+
+    def test_extension_api_output_config(self):
+        """ExtensionAPI should support output configuration."""
+
+        @extension
+        def my_extension(api):
+            @api.pre_sync(output="stdout")
+            def hook1(ctx: ExcelContext) -> None:
+                pass
+
+            @api.on_exit(output="none")
+            def hook2(ctx: ExcelContext) -> None:
+                pass
+
+        registry = get_registry()
+        entry1 = next(
+            e for e in registry.pre_sync if getattr(e.fn, "__name__", "") == "hook1"
+        )
+        entry2 = next(
+            e for e in registry.on_exit if getattr(e.fn, "__name__", "") == "hook2"
+        )
+        assert entry1.output == "stdout"
+        assert entry2.output == "none"
 
 
 class TestClearHooks:
