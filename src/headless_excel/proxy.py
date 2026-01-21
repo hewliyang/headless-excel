@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from collections.abc import Callable
 from copy import copy
 from typing import Any, Literal
@@ -128,28 +129,57 @@ class RangeProxy:
     def values(self, data: list[list[Any]]) -> None:
         """Set 2D array of values to the range.
 
+        The range acts as an anchor - data shape determines actual write region.
+        This is lenient by design to avoid LLM off-by-one errors with range specs.
+
+        Feedback is printed to stderr showing actual write region:
+        - If data matches range: [headless-excel] .values wrote to A1:D3 (3×4)
+        - If data mismatches: [headless-excel] .values wrote to A1:D3 (specified A1:D10, got 3×4)
+
         Args:
-            data: 2D list matching range dimensions
+            data: 2D list of values to write (shape determines actual region)
 
         Raises:
-            ValueError: If data dimensions don't match range dimensions
+            ValueError: If data is not a 2D list structure
         """
-        # Validate dimensions
+        # Validate structure (but not dimensions)
         if not isinstance(data, list):
             raise ValueError("Data must be a 2D list")
 
-        if len(data) != self.num_rows:
-            raise ValueError(
-                f"Row count mismatch: got {len(data)}, expected {self.num_rows}"
+        if len(data) == 0:
+            # Empty data - nothing to write
+            print(
+                "[headless-excel] .values no data to write (empty list)",
+                file=sys.stderr,
             )
+            return
 
+        # Validate all rows are lists and find max col width
+        max_cols = 0
         for i, row in enumerate(data):
             if not isinstance(row, list):
                 raise ValueError(f"Row {i} must be a list")
-            if len(row) != self.num_cols:
-                raise ValueError(
-                    f"Column count mismatch in row {i}: got {len(row)}, expected {self.num_cols}"
-                )
+            max_cols = max(max_cols, len(row))
+
+        actual_rows = len(data)
+        actual_cols = max_cols
+
+        # Calculate actual write region
+        actual_max_row = self._min_row + actual_rows - 1
+        actual_max_col = self._min_col + actual_cols - 1
+
+        # Build actual range string
+        start_cell = f"{get_column_letter(self._min_col)}{self._min_row}"
+        end_cell = f"{get_column_letter(actual_max_col)}{actual_max_row}"
+        if start_cell == end_cell:
+            actual_range = start_cell
+        else:
+            actual_range = f"{start_cell}:{end_cell}"
+
+        # Check if there's a mismatch
+        specified_matches = (
+            actual_rows == self.num_rows and actual_cols == self.num_cols
+        )
 
         # Mark dirty before writing
         if self._on_write:
@@ -161,6 +191,18 @@ class RangeProxy:
                 row_idx = self._min_row + row_offset
                 col_idx = self._min_col + col_offset
                 self._ws._formula_ws.cell(row_idx, col_idx).value = value
+
+        # Print feedback to stderr
+        if specified_matches:
+            print(
+                f"[headless-excel] .values wrote to {actual_range} ({actual_rows}×{actual_cols})",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[headless-excel] .values wrote to {actual_range} (specified {self._range_ref}, got {actual_rows}×{actual_cols})",
+                file=sys.stderr,
+            )
 
     @property
     def formulas(self) -> dict[str, str]:
@@ -926,6 +968,99 @@ class WorksheetProxy:
             r.apply_style(font=Font(bold=True))
         """
         return RangeProxy(self, ref, self._on_write)
+
+    def write(self, cell: str, data: list[list[Any]]) -> str:
+        """Write 2D data starting at anchor cell. Returns actual range written.
+
+        This is the simplest API for bulk writes - no range math required.
+        The data shape determines the write region automatically.
+
+        Feedback is printed to stderr: [headless-excel] .write() wrote to A1:D3 (3×4)
+
+        Args:
+            cell: Anchor cell like "A1" (top-left of write region)
+            data: 2D list of values to write
+
+        Returns:
+            The actual range written (e.g., "A1:D3")
+
+        Raises:
+            ValueError: If cell is invalid or data is not a 2D list
+
+        Example:
+            >>> ws.write("A1", [
+            ...     ['Company', 'Revenue', 'Profit'],
+            ...     ['Acme', 1000, 200],
+            ...     ['Beta', 2000, 400],
+            ... ])
+            [headless-excel] .write() wrote to A1:C3 (3×3)
+            'A1:C3'
+        """
+        # Validate cell reference
+        if ":" in cell:
+            raise ValueError(f"write() takes a single cell anchor, not a range: {cell}")
+
+        # Validate structure
+        if not isinstance(data, list):
+            raise ValueError("Data must be a 2D list")
+
+        if len(data) == 0:
+            print(
+                "[headless-excel] .write() no data to write (empty list)",
+                file=sys.stderr,
+            )
+            return cell
+
+        # Validate all rows are lists and find max col width
+        max_cols = 0
+        for i, row in enumerate(data):
+            if not isinstance(row, list):
+                raise ValueError(f"Row {i} must be a list")
+            max_cols = max(max_cols, len(row))
+
+        if max_cols == 0:
+            print(
+                "[headless-excel] .write() no data to write (empty rows)",
+                file=sys.stderr,
+            )
+            return cell
+
+        # Parse anchor cell
+        min_row, min_col, _, _ = _parse_range(cell)
+
+        actual_rows = len(data)
+        actual_cols = max_cols
+
+        # Calculate actual write region
+        actual_max_row = min_row + actual_rows - 1
+        actual_max_col = min_col + actual_cols - 1
+
+        # Build actual range string
+        start_cell = f"{get_column_letter(min_col)}{min_row}"
+        end_cell = f"{get_column_letter(actual_max_col)}{actual_max_row}"
+        if start_cell == end_cell:
+            actual_range = start_cell
+        else:
+            actual_range = f"{start_cell}:{end_cell}"
+
+        # Mark dirty before writing
+        if self._on_write:
+            self._on_write()
+
+        # Write values
+        for row_offset, row_data in enumerate(data):
+            for col_offset, value in enumerate(row_data):
+                row_idx = min_row + row_offset
+                col_idx = min_col + col_offset
+                self._formula_ws.cell(row_idx, col_idx).value = value
+
+        # Print feedback to stderr
+        print(
+            f"[headless-excel] .write() wrote to {actual_range} ({actual_rows}×{actual_cols})",
+            file=sys.stderr,
+        )
+
+        return actual_range
 
     @property
     def formulas(self) -> dict[str, str]:

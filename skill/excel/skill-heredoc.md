@@ -13,19 +13,42 @@ Use heredocs to run inline python scripts in bash instead of creating entire scr
 Remember that formula results do not materialize until either the context manager exits and reenters OR ctx.sync() is called manually.
 For any APIs not available in `headless-excel`, remember that `ws` is just a `openpyxl.Worksheet` object and `ctx.wb` is just a `openpyxl.Workbook`.
 
+**PREFER BULK APIs** — avoid cell-by-cell loops:
+
+```py
+# ❌ SLOW: cell-by-cell loops
+for i, val in enumerate(['A', 'B', 'C']):
+    ws.cell(row=1, column=i+1, value=val)
+
+# ✅ FAST: bulk write with .write() (simplest - no range math)
+ws.write("A1", [['A', 'B', 'C']])
+# stderr: [headless-excel] .write() wrote to A1:C1 (1×3)
+
+# ✅ FAST: bulk write with .values (lenient - data shape wins)
+ws.range("A1:C1").values = [['A', 'B', 'C']]
+# stderr: [headless-excel] .values wrote to A1:C1 (1×3)
+
+# ✅ FAST: bulk style with .apply_style  
+ws.range("A1:C1").apply_style(font=Font(bold=True), fill=PatternFill('solid', fgColor='4472C4'))
+
+# ✅ FAST: auto_fill formulas instead of loops
+ws['A1'] = '=B1*2'
+ws.range('A1:A100').auto_fill()
+```
+
 **DEBUGGING: Always use `.dump()` instead of loops**
 
 ```py
-# ❌ NEVER do this - verbose and error-prone
+# ❌ NEVER do this
 for row in ws.iter_rows(min_row=1, max_row=5):
     print([cell.value for cell in row])
 
-# ✅ ALWAYS do this instead
-ws.range("A1:D5").dump()                  # values as table
-ws.range("A1:D5").dump(show_formulas=True) # formulas as table
+# ✅ ALWAYS do this
+print(ws.range("A1:D5").dump())                  # values as table
+print(ws.range("A1:D5").dump(show_formulas=True)) # formulas as table
 ```
 
-**⚠️ VERIFY AFTER EVERY EDIT:** Always call `print(ws.range(...).dump())` after edits or `.sync()` to sanity-check the numbers. This catches off-by-one errors, wrong cell references, and formula mistakes before they propagate. Don't skip this step.
+**⚠️ VERIFY AFTER EVERY EDIT:** Always `print(ws.range(...).dump())` after edits to catch mistakes early.
 
 ## Creating Files
 
@@ -33,22 +56,26 @@ ws.range("A1:D5").dump(show_formulas=True) # formulas as table
 from headless_excel import create, NumberFormats
 from openpyxl.styles import Font, PatternFill
 
-with create(
-    "output.xlsx",
-    overwrite=True, # to replace an existing file, else to continue use `run` instead of `create
-) as ctx:
+with create("output.xlsx", overwrite=True) as ctx:
     ws = ctx.active
-    ws['A1'] = 'Revenue'
-    ws['A2'] = 100
-    ws['A3'] = '=SUM(A2:A2)'
-
-    # Cell styling
-    ws['A1'].font = Font(bold=True)
-    ws['A1'].fill = PatternFill('solid', start_color='FFFF00')
-
-    # Range styling
-    ws.range("A2:A3").apply_style(number_format=NumberFormats.ACCOUNTING)
-    ws.column_dimensions['A'].width = 20
+    
+    # Bulk write with .write() (simplest - no range math)
+    ws.write("A1", [
+        ['Revenue', 'Q1', 'Q2'],
+        ['Product A', 100, 150],
+        ['Product B', 200, '=B3*1.1'],
+    ])
+    # stderr: [headless-excel] .write() wrote to A1:C3 (3×3)
+    
+    # Bulk style with .apply_style
+    ws.range("A1:C1").apply_style(font=Font(bold=True), fill=PatternFill('solid', fgColor='4472C4'))
+    ws.range("B2:C3").apply_style(number_format=NumberFormats.ACCOUNTING)
+    
+    # Single cell (when needed)
+    ws['A5'] = '=SUM(B2:B3)'
+    
+    ctx.sync()
+    print(ws.range("A1:C5").dump())  # verify
 ```
 
 ## Editing Files
@@ -117,11 +144,21 @@ from headless_excel import create
 
 with create("model.xlsx") as ctx:
     ws = ctx.active
-    ws.range("A1:C3").values = [
+    
+    # write() - simplest, just anchor + data
+    written = ws.write("A1", [
         [10, 20, "=A1+B1"],
         [30, 40, "=A2+B2"],
         [50, 60, "=SUM(C1:C2)"],
-    ]
+    ])
+    # stderr: [headless-excel] .write() wrote to A1:C3 (3×3)
+    # returns: "A1:C3"
+    
+    # range().values - lenient, data shape determines actual region
+    ws.range("E1:Z100").values = [[1, 2], [3, 4]]
+    # stderr: [headless-excel] .values wrote to E1:F2 (specified E1:Z100, got 2×2)
+    
+    # Read data
     data = ws.range("A1:C3").values
     print(ws.range("B2:E5").shape)  # (4, 4)
 ```

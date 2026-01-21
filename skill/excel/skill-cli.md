@@ -21,14 +21,45 @@ headless-excel eval file.xlsx "code"    # run Python openpyxl code against file
 2. `eval` to mutate (auto-syncs on exit)
 3. For read-after-write in same eval, call `ctx.sync()` first
 
+**PREFER BULK APIs** over cell-by-cell:
+
+- `ws.write('A1', [[...], [...]])` — bulk write (simplest, no range math)
+- `ws.range('A1:C3').values = [[...]]` — bulk write (lenient, data shape wins)
+- `ws.range('A1:C3').apply_style(...)` — bulk style
+- `ws.range('A1:A10').auto_fill()` — fill formulas, ala drag to complete
+- `print(ws.range('A1:D10').dump())` — verify output
+
 ## Write
 
 ```bash
 headless-excel eval model.xlsx "
 ws = ctx.active
-ws['A1'] = 'Revenue'
-ws['A2'] = 100
-ws['A3'] = '=SUM(A2:A2)'
+
+# Bulk write with write() - simplest, no range to get wrong
+ws.write('A1', [
+    ['Revenue', 'Q1', 'Q2'],
+    ['Product A', 100, 150],
+    ['Product B', 200, '=B3*1.1'],
+])
+# stderr: [headless-excel] .write() wrote to A1:C3 (3×3)
+
+# Single cell (when needed)
+ws['A5'] = '=SUM(B2:B3)'
+
+ctx.sync()
+print(ws.range('A1:C5').dump())  # verify
+"
+```
+
+Bulk write with `range().values` is lenient - data shape determines actual region:
+```bash
+headless-excel eval model.xlsx "
+ws = ctx.active
+ws.range('A1:D10').values = [  # range is just a hint
+    ['Name', 'Value'],
+    ['Alpha', 100],
+]
+# stderr: [headless-excel] .values wrote to A1:B2 (specified A1:D10, got 2×2)
 "
 ```
 
@@ -68,9 +99,16 @@ headless-excel eval model.xlsx "
 from openpyxl.styles import Font, PatternFill
 
 ws = ctx.active
+
+# Bulk style (preferred)
+ws.range('A1:D1').apply_style(
+    font=Font(bold=True, color='FFFFFF'),
+    fill=PatternFill('solid', fgColor='4472C4')
+)
+ws.range('B2:D10').apply_style(number_format=NumberFormats.ACCOUNTING)
+
+# Single cell (when needed)
 ws['A1'].font = Font(bold=True)
-ws['A1'].fill = PatternFill('solid', fgColor='4472C4')
-ws.range('B2:B10').apply_style(number_format=NumberFormats.ACCOUNTING)
 "
 ```
 
@@ -100,20 +138,25 @@ ws.range('A1:D10').clear()  # clears values, formulas, and styles
 The whole point of Excel is that values recalculate automatically when inputs change. Avoid computing values in Python and simply writing static numbers.
 
 Bad (hardcoded):
+
 ```python
 total = sum(values)  # computed in Python
 ws['A10'] = total    # user edits data, total is now wrong
 ```
 
 Good (formula):
+
 ```python
 ws['A10'] = '=SUM(A1:A9)'  # always up to date
 ```
 
 ## Tips
 
+- `ws.write('A1', [[...]])` for bulk writes (simplest, no range math needed)
+- `ws.range('A1:C3').values = [[...]]` is lenient (data shape wins, check stderr)
+- `ws.range('A1:A10').auto_fill()` to fill formulas down
 - `ctx.sheet('Name')` to get existing sheet
 - `ctx.create_sheet('Name')` to create new sheet
 - `ws.range('A1:Z100').clear()` to clear a range
 - Call `ctx.sync()` before reading values you just wrote
-- Use `print(ws.range(...).dump())` to verify
+- **Always `print(ws.range(...).dump())` to verify after edits**

@@ -277,21 +277,80 @@ class TestRangeProxy:
             assert ctx.active["A1"].value == 1  # type: ignore[union-attr]
             assert ctx.active["C2"].value == 6  # type: ignore[union-attr]
 
-    def test_range_values_write_row_mismatch(self, tmp_path: Path):
-        """Test that row count mismatch raises ValueError."""
-        path = tmp_path / "test.xlsx"
-        with ExcelContext(path, create=True) as ctx:
-            r = ctx.active.range("A1:B2")  # 2 rows expected
-            with pytest.raises(ValueError, match="Row count mismatch"):
-                r.values = [[1, 2]]  # only 1 row
+    def test_range_values_write_row_mismatch_lenient(self, tmp_path: Path, capsys):
+        """Test that row count mismatch is allowed (lenient behavior).
 
-    def test_range_values_write_col_mismatch(self, tmp_path: Path):
-        """Test that column count mismatch raises ValueError."""
+        Range becomes an anchor - data shape determines actual write region.
+        Mismatch is reported to stderr but not an error.
+        """
         path = tmp_path / "test.xlsx"
         with ExcelContext(path, create=True) as ctx:
-            r = ctx.active.range("A1:C2")  # 3 cols expected
-            with pytest.raises(ValueError, match="Column count mismatch"):
-                r.values = [[1, 2], [3, 4]]  # only 2 cols
+            r = ctx.active.range("A1:B2")  # specified 2 rows
+            r.values = [[1, 2]]  # only 1 row - allowed
+            ctx.workbook.save(path)
+
+        # Verify what was written
+        with ExcelContext(path) as ctx:
+            assert ctx.active["A1"].value == 1  # type: ignore[union-attr]
+            assert ctx.active["B1"].value == 2  # type: ignore[union-attr]
+            assert ctx.active["A2"].value is None  # type: ignore[union-attr]
+
+        # Check stderr feedback
+        captured = capsys.readouterr()
+        assert "[headless-excel] .values wrote to A1:B1" in captured.err
+        assert "specified A1:B2" in captured.err
+        assert "got 1×2" in captured.err
+
+    def test_range_values_write_col_mismatch_lenient(self, tmp_path: Path, capsys):
+        """Test that column count mismatch is allowed (lenient behavior)."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            r = ctx.active.range("A1:C2")  # specified 3 cols
+            r.values = [[1, 2], [3, 4]]  # only 2 cols - allowed
+            ctx.workbook.save(path)
+
+        # Verify what was written
+        with ExcelContext(path) as ctx:
+            assert ctx.active["A1"].value == 1  # type: ignore[union-attr]
+            assert ctx.active["B2"].value == 4  # type: ignore[union-attr]
+            assert ctx.active["C1"].value is None  # type: ignore[union-attr]
+
+        # Check stderr feedback
+        captured = capsys.readouterr()
+        assert "[headless-excel] .values wrote to A1:B2" in captured.err
+        assert "specified A1:C2" in captured.err
+        assert "got 2×2" in captured.err
+
+    def test_range_values_write_overflow(self, tmp_path: Path, capsys):
+        """Test that data larger than range is allowed (overflow)."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            r = ctx.active.range("A1:B2")  # specified 2x2
+            r.values = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]  # 3x3 - overflow allowed
+            ctx.workbook.save(path)
+
+        # Verify all data was written
+        with ExcelContext(path) as ctx:
+            assert ctx.active["A1"].value == 1  # type: ignore[union-attr]
+            assert ctx.active["C3"].value == 9  # type: ignore[union-attr]
+
+        # Check stderr feedback
+        captured = capsys.readouterr()
+        assert "[headless-excel] .values wrote to A1:C3" in captured.err
+        assert "specified A1:B2" in captured.err
+        assert "got 3×3" in captured.err
+
+    def test_range_values_write_exact_match(self, tmp_path: Path, capsys):
+        """Test that exact match reports without 'specified' note."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            r = ctx.active.range("A1:B2")  # 2x2
+            r.values = [[1, 2], [3, 4]]  # exact 2x2
+            ctx.workbook.save(path)
+
+        captured = capsys.readouterr()
+        assert "[headless-excel] .values wrote to A1:B2 (2×2)" in captured.err
+        assert "specified" not in captured.err  # no mismatch note
 
     def test_range_values_write_not_list(self, tmp_path: Path):
         """Test that non-list data raises ValueError."""
@@ -381,6 +440,143 @@ class TestRangeProxy:
             r = ctx.active.range("A1:B2")
             assert "RangeProxy" in repr(r)
             assert "A1:B2" in repr(r)
+
+    def test_range_values_empty_data(self, tmp_path: Path, capsys):
+        """Test that empty data list prints message but doesn't error."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            r = ctx.active.range("A1:B2")
+            r.values = []  # empty list
+
+        captured = capsys.readouterr()
+        assert "[headless-excel] .values no data to write" in captured.err
+
+
+class TestWorksheetWrite:
+    """Tests for WorksheetProxy.write() method."""
+
+    def test_write_basic(self, tmp_path: Path, capsys):
+        """Test basic write operation."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            result = ctx.active.write("A1", [[1, 2, 3], [4, 5, 6]])
+            ctx.workbook.save(path)
+
+            assert result == "A1:C2"
+
+        # Verify written values
+        with ExcelContext(path) as ctx:
+            assert ctx.active["A1"].value == 1  # type: ignore[union-attr]
+            assert ctx.active["C2"].value == 6  # type: ignore[union-attr]
+
+        captured = capsys.readouterr()
+        assert "[headless-excel] .write() wrote to A1:C2 (2×3)" in captured.err
+
+    def test_write_single_cell(self, tmp_path: Path, capsys):
+        """Test writing a single value."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            result = ctx.active.write("B5", [[42]])
+            ctx.workbook.save(path)
+
+            assert result == "B5"
+
+        # Verify
+        with ExcelContext(path) as ctx:
+            assert ctx.active["B5"].value == 42  # type: ignore[union-attr]
+
+        captured = capsys.readouterr()
+        assert "[headless-excel] .write() wrote to B5 (1×1)" in captured.err
+
+    def test_write_with_formulas(self, tmp_path: Path, capsys):
+        """Test writing mix of values and formulas."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            result = ctx.active.write(
+                "A1",
+                [
+                    [10, 20, "=A1+B1"],
+                    [30, 40, "=A2+B2"],
+                ],
+            )
+            ctx.workbook.save(path)
+
+            assert result == "A1:C2"
+
+        # Verify
+        with ExcelContext(path) as ctx:
+            assert ctx.active["A1"].value == 10  # type: ignore[union-attr]
+            assert ctx.active.formulas == {"C1": "=A1+B1", "C2": "=A2+B2"}
+
+    def test_write_marks_dirty(self, tmp_path: Path):
+        """Test that write() marks context as dirty."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            ctx.sync()
+            assert not ctx._dirty
+
+            ctx.active.write("A1", [[1]])
+            assert ctx._dirty
+
+    def test_write_rejects_range(self, tmp_path: Path):
+        """Test that write() rejects range references."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            with pytest.raises(ValueError, match="single cell anchor"):
+                ctx.active.write("A1:B2", [[1, 2], [3, 4]])
+
+    def test_write_rejects_non_list(self, tmp_path: Path):
+        """Test that write() rejects non-list data."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            with pytest.raises(ValueError, match="must be a 2D list"):
+                ctx.active.write("A1", "not a list")  # type: ignore[arg-type]
+
+    def test_write_rejects_non_list_rows(self, tmp_path: Path):
+        """Test that write() rejects rows that are not lists."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            with pytest.raises(ValueError, match="Row 0 must be a list"):
+                ctx.active.write("A1", ["not", "nested"])  # type: ignore[list-item]
+
+    def test_write_empty_data(self, tmp_path: Path, capsys):
+        """Test write with empty data."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            result = ctx.active.write("A1", [])
+
+            assert result == "A1"
+
+        captured = capsys.readouterr()
+        assert "[headless-excel] .write() no data to write" in captured.err
+
+    def test_write_jagged_arrays(self, tmp_path: Path, capsys):
+        """Test write with jagged (uneven) arrays."""
+        path = tmp_path / "test.xlsx"
+        with ExcelContext(path, create=True) as ctx:
+            # Rows have different lengths
+            result = ctx.active.write(
+                "A1",
+                [
+                    [1, 2, 3],
+                    [4, 5],  # shorter row
+                    [7, 8, 9, 10],  # longer row
+                ],
+            )
+            ctx.workbook.save(path)
+
+            # Should use max width (4 cols)
+            assert result == "A1:D3"
+
+        # Verify
+        with ExcelContext(path) as ctx:
+            assert ctx.active["A1"].value == 1  # type: ignore[union-attr]
+            assert ctx.active["D3"].value == 10  # type: ignore[union-attr]
+            # Shorter row doesn't touch column D
+            assert ctx.active["C2"].value is None  # type: ignore[union-attr]
+
+        captured = capsys.readouterr()
+        assert "[headless-excel] .write() wrote to A1:D3 (3×4)" in captured.err
 
 
 class TestRangeApplyStyle:
