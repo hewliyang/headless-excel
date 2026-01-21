@@ -774,13 +774,13 @@ class TestRangeClear:
                 [None, None, None],
             ]
 
-    def test_clear_preserves_styles_by_default(self, tmp_path: Path):
+    def test_clear_preserves_styles_when_styles_false(self, tmp_path: Path):
         """Test that clear() preserves styles when styles=False."""
         path = tmp_path / "test.xlsx"
         with ExcelContext(path, create=True) as ctx:
             ctx.active["A1"] = "Test"
             ctx.active.range("A1").apply_style(font=Font(bold=True))
-            ctx.active.range("A1").clear()
+            ctx.active.range("A1").clear(styles=False)
             ctx.workbook.save(path)
 
         with ExcelContext(path) as ctx:

@@ -353,15 +353,15 @@ class RangeProxy:
         result = "\n".join(lines)
         return result
 
-    def clear(self, styles: bool = False) -> None:
-        """Clear cell values (and optionally styles) in the range.
+    def clear(self, styles: bool = True) -> None:
+        """Clear cell values and styles in the range.
 
         Args:
-            styles: If True, also reset cell styles to defaults
+            styles: If True (default), also reset cell styles to defaults
 
         Example:
-            >>> ws.range("A1:C3").clear()  # Clear values only
-            >>> ws.range("A1:C3").clear(styles=True)  # Clear values and styles
+            >>> ws.range("A1:C3").clear()  # Clear values and styles
+            >>> ws.range("A1:C3").clear(styles=False)  # Clear values only
         """
         if self._on_write:
             self._on_write()
