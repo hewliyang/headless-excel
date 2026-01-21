@@ -24,7 +24,11 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Office/Business :: Financial :: Spreadsheet",
 ]
-dependencies = ["openpyxl>=3.1.0"]
+dependencies = [
+    "openpyxl>=3.1.0",
+    "watchdog>=6.0.0",
+    "websockets>=16.0",
+]
 
 [project.scripts]
 headless-excel = "headless_excel.cli:main"

@@ -10,6 +10,7 @@ from pathlib import Path
 from headless_excel import NumberFormats, create, run
 from headless_excel.hooks import get_registry
 from headless_excel.libre import setup_libreoffice_macro
+from headless_excel.watch import watch
 
 
 def _get_hook_name(hook: object) -> str:
@@ -151,6 +152,12 @@ def main():
         "code", nargs="?", default="-", help="Code to eval (default: stdin)"
     )
 
+    # watch
+    p_watch = subparsers.add_parser("watch", help="Live viewer with auto-reload")
+    p_watch.add_argument("file", help="Excel file to watch")
+    p_watch.add_argument("--port", type=int, default=8080, help="HTTP port (default: 8080)")
+    p_watch.add_argument("--ws-port", type=int, default=8765, help="WebSocket port (default: 8765)")
+
     args = parser.parse_args()
 
     if args.command == "check":
@@ -170,6 +177,16 @@ def main():
                 "NumberFormats": NumberFormats,
             }
             exec(code, ns)
+
+    elif args.command == "watch":
+        import asyncio
+        try:
+            asyncio.run(watch(args.file, http_port=args.port, ws_port=args.ws_port))
+        except KeyboardInterrupt:
+            print("\nStopped")
+        except (FileNotFoundError, ValueError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":

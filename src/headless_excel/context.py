@@ -504,8 +504,9 @@ def _run_context(
     try:
         yield ctx
 
-        # Sync if there were write operations since last sync
-        if auto_sync and ctx._dirty:
+        # Always sync on exit - detecting all mutations is impractical
+        # Todo: rm ctx._dirty altogether
+        if auto_sync:
             ctx.sync(raise_on_errors=False)
 
         # Print errors from any sync (manual or auto) to stderr
