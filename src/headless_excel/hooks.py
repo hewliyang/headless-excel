@@ -37,7 +37,9 @@ Output Configuration:
 from __future__ import annotations
 
 import importlib.util
+import io
 import logging
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -442,9 +444,6 @@ def _run_hook_with_prefix(
         hook_type: Type of hook for prefix (e.g., "pre-sync", "post-sync", "on-exit")
         output: Where to send captured output ("stderr", "stdout", or "none")
     """
-    import io
-    import sys
-
     hook_name = _get_hook_name(hook)
     prefix = f"[{hook_type}:{hook_name}]"
 

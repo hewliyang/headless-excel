@@ -1,6 +1,7 @@
 """CLI for headless-excel."""
 
 import argparse
+import asyncio
 import shutil
 import subprocess
 import sys
@@ -12,123 +13,169 @@ from headless_excel.hooks import get_registry
 from headless_excel.libre import setup_libreoffice_macro
 from headless_excel.watch import watch
 
+GREEN = "\033[32m"
+RED = "\033[31m"
+DIM = "\033[2m"
+RESET = "\033[0m"
+
+
+def _ok(msg: str) -> None:
+    print(f"{GREEN}✓{RESET} {msg}")
+
+
+def _fail(msg: str) -> None:
+    print(f"{RED}✗{RESET} {msg}", file=sys.stderr)
+
+
+def _info(msg: str, indent: int = 1) -> None:
+    print(f"{'  ' * indent}{DIM}{msg}{RESET}")
+
+
+def _bullet(msg: str, indent: int = 2) -> None:
+    print(f"{'  ' * indent}{DIM}•{RESET} {msg}")
+
 
 def _get_hook_name(hook: object) -> str:
     """Get the name of a hook function."""
     return getattr(hook, "__name__", repr(hook))
 
 
-def cmd_check() -> int:
-    """Check if environment is set up correctly."""
-    print("headless-excel environment check\n")
-    ok = True
+def _find_hook_files(directory: Path) -> list[Path]:
+    """Find all Python hook files in a directory (excluding private files)."""
+    if not directory.is_dir():
+        return []
+    return sorted(f for f in directory.rglob("*.py") if not f.name.startswith("_"))
 
-    # 1. Check soffice in PATH
+
+def _get_libreoffice_version() -> str | None:
+    """Get LibreOffice version string, or None if unavailable."""
+    try:
+        result = subprocess.run(
+            ["soffice", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return None
+
+
+def _run_recalc_test() -> tuple[bool, str]:
+    """Run a quick recalc test. Returns (success, message)."""
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_file = Path(tmpdir) / "test.xlsx"
+            with create(str(test_file), verbose_errors=False) as ctx:
+                ctx.active["A1"] = 2
+                ctx.active["A2"] = 3
+                ctx.active["A3"] = "=A1+A2"
+                ctx.sync()
+                result = ctx.active.cell(3, 1).value
+
+            if result == 5:
+                return True, "Recalc test passed (2+3=5)"
+            else:
+                return False, f"Recalc test failed (expected 5, got {result})"
+    except Exception as e:
+        return False, f"Recalc test failed: {e}"
+
+
+def _check_libreoffice() -> tuple[bool, str | None]:
+    """Check if LibreOffice is available. Returns (found, path)."""
     soffice = shutil.which("soffice")
     if soffice:
-        print(f"✓ LibreOffice found: {soffice}")
+        _ok(f"LibreOffice found: {soffice}")
+        if version := _get_libreoffice_version():
+            _info(version)
+        return True, soffice
 
-        # Get version
-        try:
-            result = subprocess.run(
-                ["soffice", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            version = result.stdout.strip()
-            print(f"  {version}")
-        except Exception:
-            pass
+    _fail("LibreOffice not found in PATH")
+    _info("Install it:")
+    if sys.platform == "darwin":
+        _info("brew install --cask libreoffice", indent=2)
     else:
-        print("✗ LibreOffice not found in PATH")
-        print("  Install it:")
-        if sys.platform == "darwin":
-            print("    brew install --cask libreoffice")
-        else:
-            print("    sudo apt install libreoffice libreoffice-calc")
-        ok = False
+        _info("sudo apt install libreoffice libreoffice-calc", indent=2)
+    return False, None
 
-    # 2. Check/setup macro
-    if soffice:
-        if setup_libreoffice_macro():
-            print("✓ LibreOffice macro configured")
-        else:
-            print("✗ Failed to configure LibreOffice macro")
-            ok = False
 
-    # 3. List hooks
+def _check_macro() -> bool:
+    """Check/setup LibreOffice macro. Returns success."""
+    if setup_libreoffice_macro():
+        _ok("LibreOffice macro configured")
+        return True
+    _fail("Failed to configure LibreOffice macro")
+    return False
+
+
+def _check_recalc() -> bool:
+    """Run a quick recalc test. Returns success."""
+    print("\nRunning recalc test...")
+    success, msg = _run_recalc_test()
+    (_ok if success else _fail)(msg)
+    return success
+
+
+def _print_hook_source(directory: Path, label: str) -> None:
+    """Print hook source directory and its files."""
+    hook_files = _find_hook_files(directory)
+    suffix = "" if hook_files else ", empty"
+    _info(f"source: {directory.absolute()} ({label}{suffix})")
+    for f in hook_files:
+        _bullet(str(f.relative_to(directory)))
+
+
+def _print_hooks_info() -> None:
+    """Print information about discovered hooks."""
     print("\nHooks:")
+
     local_dir = Path(".headless-excel/hooks")
     global_dir = Path.home() / ".headless-excel" / "hooks"
 
     if local_dir.is_dir():
-        hook_files = sorted(
-            f for f in local_dir.rglob("*.py") if not f.name.startswith("_")
-        )
-        if hook_files:
-            print(f"  source: {local_dir.absolute()} (project-local)")
-            for f in hook_files:
-                print(f"    • {f.relative_to(local_dir)}")
-        else:
-            print(f"  source: {local_dir.absolute()} (project-local, empty)")
+        _print_hook_source(local_dir, "project-local")
     elif global_dir.is_dir():
-        hook_files = sorted(
-            f for f in global_dir.rglob("*.py") if not f.name.startswith("_")
-        )
-        if hook_files:
-            print(f"  source: {global_dir} (global)")
-            for f in hook_files:
-                print(f"    • {f.relative_to(global_dir)}")
-        else:
-            print(f"  source: {global_dir} (global, empty)")
+        _print_hook_source(global_dir, "global")
     else:
-        print("  (no hooks directory found)")
+        _info("(no hooks directory found)")
 
     # Show registered hooks
     registry = get_registry()
-    total = len(registry.pre_sync) + len(registry.post_sync) + len(registry.on_exit)
-    if total > 0:
-        print("\n  registered:")
-        if registry.pre_sync:
-            names = ", ".join(_get_hook_name(h) for h in registry.pre_sync)
-            print(f"    pre_sync:  {names}")
-        if registry.post_sync:
-            names = ", ".join(_get_hook_name(h) for h in registry.post_sync)
-            print(f"    post_sync: {names}")
-        if registry.on_exit:
-            names = ", ".join(_get_hook_name(h) for h in registry.on_exit)
-            print(f"    on_exit:   {names}")
+    hook_types = [
+        ("pre_sync", registry.pre_sync),
+        ("post_sync", registry.post_sync),
+        ("on_exit", registry.on_exit),
+    ]
 
-    # 4. Quick recalc test
-    if soffice and ok:
-        print("\nRunning recalc test...")
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                test_file = Path(tmpdir) / "test.xlsx"
-                with create(str(test_file), verbose_errors=False) as ctx:
-                    ctx.active["A1"] = 2
-                    ctx.active["A2"] = 3
-                    ctx.active["A3"] = "=A1+A2"
-                    ctx.sync()
-                    result = ctx.active.cell(3, 1).value
+    registered = [(name, hooks) for name, hooks in hook_types if hooks]
+    if registered:
+        print()
+        _info("registered:")
+        max_len = max(len(name) for name, _ in registered)
+        for name, hooks in registered:
+            names = ", ".join(_get_hook_name(h.fn) for h in hooks)
+            _info(f"{name}:{' ' * (max_len - len(name))}  {names}", indent=2)
 
-                if result == 5:
-                    print("✓ Recalc test passed (2+3=5)")
-                else:
-                    print(f"✗ Recalc test failed (expected 5, got {result})")
-                    ok = False
-        except Exception as e:
-            print(f"✗ Recalc test failed: {e}")
-            ok = False
+
+def cmd_check() -> int:
+    """Check if environment is set up correctly."""
+    print("headless-excel environment check\n")
+
+    soffice_ok, _ = _check_libreoffice()
+    macro_ok = _check_macro() if soffice_ok else False
+    _print_hooks_info()
+    recalc_ok = _check_recalc() if soffice_ok and macro_ok else True
 
     print()
-    if ok:
-        print("All checks passed! Ready to use.")
-        return 0
-    else:
+
+    all_ok = soffice_ok and macro_ok and recalc_ok
+
+    if not all_ok:
         print("Some checks failed. See above for details.")
         return 1
+
+    print("All checks passed! Ready to use.")
+    return 0
 
 
 def main():
@@ -164,34 +211,28 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == "check":
-        sys.exit(cmd_check())
+    match args.command:
+        case "check":
+            sys.exit(cmd_check())
 
-    elif args.command == "create":
-        with create(args.file) as ctx:
-            ctx.sync()
-        print(f"Created {args.file}")
+        case "create":
+            with create(args.file) as ctx:
+                ctx.sync()
+            print(f"Created {args.file}")
 
-    elif args.command == "eval":
-        code = sys.stdin.read() if args.code == "-" else args.code
+        case "eval":
+            code = sys.stdin.read() if args.code == "-" else args.code
+            with run(args.file) as ctx:
+                exec(code, {"ctx": ctx, "NumberFormats": NumberFormats})
 
-        with run(args.file) as ctx:
-            ns = {
-                "ctx": ctx,
-                "NumberFormats": NumberFormats,
-            }
-            exec(code, ns)
-
-    elif args.command == "watch":
-        import asyncio
-
-        try:
-            asyncio.run(watch(args.file, http_port=args.port, ws_port=args.ws_port))
-        except KeyboardInterrupt:
-            print("\nStopped")
-        except (FileNotFoundError, ValueError) as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+        case "watch":
+            try:
+                asyncio.run(watch(args.file, http_port=args.port, ws_port=args.ws_port))
+            except KeyboardInterrupt:
+                print("\nStopped")
+            except (FileNotFoundError, ValueError) as e:
+                _fail(str(e))
+                sys.exit(1)
 
 
 if __name__ == "__main__":
