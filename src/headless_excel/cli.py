@@ -66,7 +66,7 @@ def _run_recalc_test() -> tuple[bool, str]:
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             test_file = Path(tmpdir) / "test.xlsx"
-            with create(str(test_file), verbose_errors=False) as ctx:
+            with create(test_file) as ctx:
                 ctx.active["A1"] = 2
                 ctx.active["A2"] = 3
                 ctx.active["A3"] = "=A1+A2"
