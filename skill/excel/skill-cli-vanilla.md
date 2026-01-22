@@ -110,6 +110,21 @@ Good (formula):
 ws['A10'] = '=SUM(A1:A9)'  # always up to date
 ```
 
+## Layout
+
+- Prefer uniform column widths
+- Use empty columns for indentation (not varying widths)
+- Always specify units in headers: `Revenue ($mm)`, `Growth (%)`
+
+## Documentation
+
+Every hardcoded input needs a source note:
+
+```
+Source: [Document], [Date], [Reference], [URL]
+Example: Source: Company 10-K, FY2024, Page 45
+```
+
 ## Tips
 
 - `ctx.sheet('Name')` to get existing sheet

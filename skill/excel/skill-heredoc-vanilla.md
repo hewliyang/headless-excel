@@ -188,3 +188,18 @@ with create("model.xlsx") as ctx:
 - Set `ws.column_dimensions['A'].width` for appropriate column widths
 - Minimal fills, use borders sparingly for section separation
 - Appropriate widths so data is readable out of the box
+
+## Layout
+
+- Prefer uniform column widths
+- Use empty columns for indentation (not varying widths)
+- Always specify units in headers: `Revenue ($mm)`, `Growth (%)`
+
+## Documentation
+
+Every hardcoded input needs a source note:
+
+```
+Source: [Document], [Date], [Reference], [URL]
+Example: Source: Company 10-K, FY2024, Page 45
+```

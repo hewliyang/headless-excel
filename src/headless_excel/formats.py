@@ -23,5 +23,5 @@ class NumberFormats:
     NUMBER_0DP = "#,##0"
 
     # Date formats
-    DATE = "m/d/yyyy"
+    DATE = "dd-mmm-yyyy"
     DATE_LONG = "mmmm d, yyyy"
