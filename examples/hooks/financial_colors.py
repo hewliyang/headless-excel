@@ -47,7 +47,7 @@ def infer_financial_color(value: Any) -> str | None:
         if "!" in formula_without_strings:
             return Colors.EXTERNAL_LINK
         return Colors.FORMULA
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
+    if isinstance(value, int | float) and not isinstance(value, bool):
         return Colors.HARDCODE
     return None
 

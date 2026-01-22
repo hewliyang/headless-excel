@@ -155,8 +155,12 @@ def main():
     # watch
     p_watch = subparsers.add_parser("watch", help="Live viewer with auto-reload")
     p_watch.add_argument("file", help="Excel file to watch")
-    p_watch.add_argument("--port", type=int, default=8080, help="HTTP port (default: 8080)")
-    p_watch.add_argument("--ws-port", type=int, default=8765, help="WebSocket port (default: 8765)")
+    p_watch.add_argument(
+        "--port", type=int, default=8080, help="HTTP port (default: 8080)"
+    )
+    p_watch.add_argument(
+        "--ws-port", type=int, default=8765, help="WebSocket port (default: 8765)"
+    )
 
     args = parser.parse_args()
 
@@ -180,6 +184,7 @@ def main():
 
     elif args.command == "watch":
         import asyncio
+
         try:
             asyncio.run(watch(args.file, http_port=args.port, ws_port=args.ws_port))
         except KeyboardInterrupt:

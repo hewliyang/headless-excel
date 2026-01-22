@@ -187,7 +187,7 @@ def create_handler(file_path: Path, html_content: str):
                 content = html_content.encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
-                self.send_header("Content-Length", len(content))
+                self.send_header("Content-Length", str(len(content)))
                 self.end_headers()
                 self.wfile.write(content)
             elif self.path.startswith("/file.xlsx"):
@@ -198,7 +198,7 @@ def create_handler(file_path: Path, html_content: str):
                         "Content-Type",
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     )
-                    self.send_header("Content-Length", len(content))
+                    self.send_header("Content-Length", str(len(content)))
                     self.send_header("Cache-Control", "no-cache")
                     self.end_headers()
                     self.wfile.write(content)

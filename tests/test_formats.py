@@ -32,7 +32,7 @@ class TestNumberFormats:
 
     def test_date_formats_exist(self):
         """Date formats should exist."""
-        assert NumberFormats.DATE == "m/d/yyyy"
+        assert NumberFormats.DATE == "dd-mmm-yyyy"
         assert NumberFormats.DATE_LONG == "mmmm d, yyyy"
 
     def test_apply_accounting_format(self, tmp_path: Path):
