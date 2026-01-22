@@ -1,6 +1,7 @@
 """headless-excel - Excel wrapper with automatic recalculation via LibreOffice."""
 
 from headless_excel.context import ExcelContext, SyncResult, create, run
+from headless_excel.daemon import is_daemon_running, start_daemon, stop_daemon
 from headless_excel.errors import (
     ErrorDetail,
     ExcelError,
@@ -22,12 +23,7 @@ from headless_excel.hooks import (
     post_sync,
     pre_sync,
 )
-from headless_excel.libre import (
-    daemon_recalc,
-    is_daemon_running,
-    start_daemon,
-    stop_daemon,
-)
+from headless_excel.libre import daemon_recalc
 from headless_excel.proxy import (
     EXCEL_ERRORS,
     CellProxy,

@@ -53,6 +53,10 @@ ignore = ["E501"]              # line length in XML macro strings
 testpaths = ["tests"]
 addopts = "-v"
 
+[tool.ty.src]
+# linux_helper.py runs in LibreOffice's Python environment with UNO bindings
+exclude = ["src/headless_excel/daemon/linux_helper.py"]
+
 [dependency-groups]
 dev = [
     "ipykernel>=7.1.0",
