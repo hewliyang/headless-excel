@@ -411,6 +411,27 @@ def my_extension(api: ExtensionAPI):
 
 See `examples/hooks/` for complete examples including financial color automation and audit logging.
 
+## Performance: Daemon Mode
+
+By default, each `sync()` spawns a new LibreOffice process (~2-3s). For faster recalculation, start the daemon:
+
+```bash
+headless-excel libreoffice start   # Start daemon (~0.5s per recalc)
+headless-excel libreoffice stop    # Stop daemon
+headless-excel libreoffice status  # Check status
+```
+
+The `recalc()` function auto-detects the daemon — no code changes needed.
+
+```python
+# Programmatic control
+from headless_excel import start_daemon, stop_daemon, is_daemon_running
+
+start_daemon()
+# ... your code, sync() calls now use daemon ...
+stop_daemon()
+```
+
 ## How It Works
 
 1. **Edit**: Use standard openpyxl operations on `ctx.workbook`

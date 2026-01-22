@@ -10,7 +10,13 @@ from pathlib import Path
 
 from headless_excel import NumberFormats, create, run
 from headless_excel.hooks import get_registry
-from headless_excel.libre import setup_libreoffice_macro
+from headless_excel.libre import (
+    PID_FILE,
+    is_daemon_running,
+    setup_libreoffice_macro,
+    start_daemon,
+    stop_daemon,
+)
 from headless_excel.watch import watch
 
 GREEN = "\033[32m"
@@ -157,6 +163,18 @@ def _print_hooks_info() -> None:
             _info(f"{name}:{' ' * (max_len - len(name))}  {names}", indent=2)
 
 
+def _check_daemon() -> None:
+    """Check daemon status."""
+    print("\nDaemon:")
+    if is_daemon_running():
+        _ok("LibreOffice daemon is running")
+        if PID_FILE.exists():
+            _info(f"PID: {PID_FILE.read_text().strip()}")
+    else:
+        _info("LibreOffice daemon is not running (optional)")
+        _info("Start for faster recalc: headless-excel libreoffice start", indent=2)
+
+
 def cmd_check() -> int:
     """Check if environment is set up correctly."""
     print("headless-excel environment check\n")
@@ -164,6 +182,7 @@ def cmd_check() -> int:
     soffice_ok, _ = _check_libreoffice()
     macro_ok = _check_macro() if soffice_ok else False
     _print_hooks_info()
+    _check_daemon()
     recalc_ok = _check_recalc() if soffice_ok and macro_ok else True
 
     print()
@@ -176,6 +195,55 @@ def cmd_check() -> int:
 
     print("All checks passed! Ready to use.")
     return 0
+
+
+def cmd_libreoffice_start() -> int:
+    """Start the LibreOffice daemon."""
+    if is_daemon_running():
+        _ok("Daemon is already running")
+        if PID_FILE.exists():
+            _info(f"PID: {PID_FILE.read_text().strip()}")
+        return 0
+
+    print("Starting LibreOffice daemon...")
+    try:
+        pid = start_daemon(wait=True, timeout=15)
+        _ok(f"Daemon started (PID: {pid})")
+        _info("Stop with: headless-excel libreoffice stop")
+        return 0
+    except Exception as e:
+        _fail(f"Failed to start daemon: {e}")
+        return 1
+
+
+def cmd_libreoffice_stop() -> int:
+    """Stop the LibreOffice daemon."""
+    if not is_daemon_running():
+        print("Daemon is not running")
+        # Still try to clean up any stale processes
+        stop_daemon()
+        return 0
+
+    print("Stopping LibreOffice daemon...")
+    if stop_daemon():
+        _ok("Daemon stopped")
+        return 0
+    else:
+        _fail("Failed to stop daemon")
+        return 1
+
+
+def cmd_libreoffice_status() -> int:
+    """Check the status of the LibreOffice daemon."""
+    if is_daemon_running():
+        _ok("Daemon is running")
+        if PID_FILE.exists():
+            _info(f"PID: {PID_FILE.read_text().strip()}")
+        return 0
+    else:
+        print("Daemon is not running")
+        _info("Start with: headless-excel libreoffice start")
+        return 1
 
 
 def main():
@@ -209,6 +277,17 @@ def main():
         "--ws-port", type=int, default=8765, help="WebSocket port (default: 8765)"
     )
 
+    # libreoffice
+    p_libre = subparsers.add_parser(
+        "libreoffice",
+        help="Manage LibreOffice daemon for fast recalculation",
+        aliases=["lo"],
+    )
+    libre_sub = p_libre.add_subparsers(dest="libre_command", required=True)
+    libre_sub.add_parser("start", help="Start the LibreOffice daemon")
+    libre_sub.add_parser("stop", help="Stop the LibreOffice daemon")
+    libre_sub.add_parser("status", help="Check daemon status")
+
     args = parser.parse_args()
 
     match args.command:
@@ -233,6 +312,15 @@ def main():
             except (FileNotFoundError, ValueError) as e:
                 _fail(str(e))
                 sys.exit(1)
+
+        case "libreoffice" | "lo":
+            match args.libre_command:
+                case "start":
+                    sys.exit(cmd_libreoffice_start())
+                case "stop":
+                    sys.exit(cmd_libreoffice_stop())
+                case "status":
+                    sys.exit(cmd_libreoffice_status())
 
 
 if __name__ == "__main__":
