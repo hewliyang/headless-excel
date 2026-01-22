@@ -25,8 +25,5 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Run tests
-        run: uv run pytest -v
-
       - name: Run tests with coverage
-        run: uv run pytest --cov=src --cov-report=term-missing
+        run: uv run pytest -v --cov=src --cov-report=term-missing
