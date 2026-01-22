@@ -2,6 +2,8 @@ FROM python:3.12-slim-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice-calc \
+    libreoffice-script-provider-python \
+    python3-uno \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
     && apt-get clean
 
