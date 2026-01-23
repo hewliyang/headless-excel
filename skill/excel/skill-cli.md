@@ -5,7 +5,7 @@ description: "Creating & editing Excel workbooks via CLI"
 
 # headless-excel CLI
 
-All operations are bash calls. Code runs with `ctx` (ExcelContext) and `NumberFormats` available.
+All operations are bash calls. Code runs with `ctx` (ExcelContext) and `NumberFormats` in globals.
 
 ## Commands
 
@@ -156,17 +156,54 @@ ws['A10'] = '=SUM(A1:A9)'  # always up to date
 - Use empty columns for indentation (not varying widths)
 - Always specify units in headers: `Revenue ($mm)`, `Growth (%)`
 
-## Documentation
+## API Reference
 
-Every hardcoded input needs a source note:
+```python
+# ExcelContext (ctx)
+ctx.active                      # get/set active WorksheetProxy
+ctx.sheet(name)                 # get existing sheet by name
+ctx.create_sheet(title, index=None)  # create new sheet
+ctx.delete_sheet(name)          # delete sheet
+ctx.sync(raise_on_errors=False) # save, recalc via LibreOffice, reload
+ctx.wb                          # WorkbookProxy (also ctx.workbook)
 
-```
-Source: [Document], [Date], [Reference], [URL]
-Example: Source: Company 10-K, FY2024, Page 45
+# WorksheetProxy (ws) - also has all openpyxl Worksheet attrs
+ws['A1']                        # get CellProxy
+ws['A1'] = value                # set cell value
+ws.cell(row, col, value=None)   # get CellProxy by row/col index
+ws.range('A1:C3')               # get RangeProxy
+ws.write('A1', [[...]])         # bulk write from anchor, returns range written
+ws.title                        # sheet name (read/write)
+ws.column_dimensions['A'].width # column width
+
+# RangeProxy
+range.values                    # get/set 2D array (setter is lenient on shape)
+range.formulas                  # dict of {coord: formula}
+range.shape                     # (rows, cols)
+range.apply_style(              # bulk styling
+    font=None,                  # Font
+    fill=None,                  # PatternFill
+    alignment=None,             # Alignment
+    border=None,                # Border
+    number_format=None,         # str (use NumberFormats.*)
+)
+range.auto_fill(                # fill formulas like Excel drag
+    direction=None,             # 'down'|'right'|'up'|'left' (auto-detects)
+    source_rows=1,              # rows to use as pattern
+    copy_styles=True,
+)
+range.clear(styles=True)        # clear values and optionally styles
+range.dump(show_formulas=False) # formatted table string for debugging
+
+# CellProxy
+cell.value                      # get materialized value / set value
+cell.formula                    # get formula string or None (read-only)
+cell.font, cell.fill, cell.border, cell.number_format, cell.alignment
 ```
 
 ## Tips
 
+- Keep each `eval` under 100 LoC; build worksheets incrementally across multiple calls
 - `ws.write('A1', [[...]])` for bulk writes (simplest, no range math needed)
 - `ws.range('A1:C3').values = [[...]]` is lenient (data shape wins, check stderr)
 - `ws.range('A1:A10').auto_fill()` to fill formulas down
