@@ -1881,3 +1881,22 @@ class TestFindErrors:
             # Before sync
             errors = ctx.find_errors()
             assert errors == {}
+
+
+class TestSourceCode:
+    """Tests for _code - code passed through for hooks."""
+
+    def test_code_none_for_library_usage(self, tmp_path: Path):
+        """Test that _code is None when not using CLI."""
+        path = tmp_path / "test.xlsx"
+
+        with create(path) as ctx:
+            assert ctx._code is None
+
+    def test_code_with_explicit_param(self, tmp_path: Path):
+        """Test _code parameter (used by CLI)."""
+        path = tmp_path / "test.xlsx"
+        code = "ctx.active['A1'] = 1\nctx.active['A2'] = 2\n"
+
+        with create(path, _code=code) as ctx:
+            assert ctx._code == code

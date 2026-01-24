@@ -325,7 +325,7 @@ def main():
                 code = sys.stdin.read()
             else:
                 code = args.code
-            with run(args.file) as ctx:
+            with run(args.file, _code=code) as ctx:
                 exec(code, {"ctx": ctx, "NumberFormats": NumberFormats})
 
         case "watch":

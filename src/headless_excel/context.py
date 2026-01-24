@@ -126,6 +126,7 @@ class ExcelContext:
         path: str | Path,
         create: bool = False,
         recalc_timeout: int = 30,
+        _code: str | None = None,
     ) -> None:
         """Initialize Excel context.
 
@@ -133,6 +134,7 @@ class ExcelContext:
             path: Path to the Excel file
             create: If True, create new workbook; if False, load existing
             recalc_timeout: Timeout in seconds for LibreOffice recalculation
+            _code: The code being executed (for hooks, set by CLI eval)
         """
         self.path = Path(path)
         self._recalc_timeout = recalc_timeout
@@ -143,6 +145,7 @@ class ExcelContext:
         self._is_new_workbook = create
         self._first_sheet_created = False
         self._last_sync_result: SyncResult | None = None
+        self.__code = _code
 
         if create:
             self._workbook = Workbook()
@@ -183,6 +186,23 @@ class ExcelContext:
         if self._values_workbook is None:
             raise RuntimeError("Call sync() first to materialize values")
         return self._values_workbook
+
+    @property
+    def _code(self) -> str | None:
+        """The Python code being executed (if available).
+
+        Only set when using CLI eval command. Useful for hooks that
+        want to inspect or lint the user's code.
+
+        Example:
+            @on_exit
+            def warn_large_blocks(ctx):
+                if ctx._code:
+                    lines = [l for l in ctx._code.splitlines() if l.strip()]
+                    if len(lines) > 20:
+                        print("Warning: consider splitting")
+        """
+        return self.__code
 
     @property
     def active(self) -> WorksheetProxy:
@@ -486,6 +506,7 @@ def _run_context(
     auto_sync: bool,
     verbose_errors: bool,
     recalc_timeout: int,
+    _code: str | None = None,
 ) -> Generator[ExcelContext, None, None]:
     """Internal context manager for Excel operations.
 
@@ -500,6 +521,7 @@ def _run_context(
         path,
         create=create_mode,
         recalc_timeout=recalc_timeout,
+        _code=_code,
     )
     try:
         yield ctx
@@ -530,6 +552,7 @@ def run(
     auto_sync: bool = True,
     verbose_errors: bool = True,
     recalc_timeout: int = 30,
+    _code: str | None = None,
 ) -> Generator[ExcelContext, None, None]:
     """Open an existing Excel file for operations.
 
@@ -563,6 +586,7 @@ def run(
         verbose_errors: If True, print formula errors to stderr on exit.
             File is always saved - these are just errors in cell values.
         recalc_timeout: Timeout in seconds for LibreOffice recalculation
+        _code: Internal use - source code string for CLI eval
 
     Yields:
         ExcelContext for operations
@@ -576,6 +600,7 @@ def run(
         auto_sync,
         verbose_errors,
         recalc_timeout,
+        _code,
     )
 
 
@@ -586,6 +611,7 @@ def create(
     auto_sync: bool = True,
     verbose_errors: bool = True,
     recalc_timeout: int = 30,
+    _code: str | None = None,
 ) -> Generator[ExcelContext, None, None]:
     """Create a new Excel file.
 
@@ -614,6 +640,7 @@ def create(
         verbose_errors: If True, print formula errors to stderr on exit.
             File is always saved - these are just errors in cell values.
         recalc_timeout: Timeout in seconds for LibreOffice recalculation
+        _code: Internal use - source code string for CLI eval
 
     Yields:
         ExcelContext for operations
@@ -632,4 +659,5 @@ def create(
         auto_sync,
         verbose_errors,
         recalc_timeout,
+        _code,
     )
