@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import select
 import shutil
 import subprocess
 import sys
@@ -296,7 +297,31 @@ def main():
             print(f"Created {args.file}")
 
         case "eval":
-            code = sys.stdin.read() if args.code == "-" else args.code
+            file_path = Path(args.file)
+            valid_extensions = {".xlsx", ".xls", ".xlsm", ".xlsb"}
+            looks_like_code = file_path.suffix.lower() not in valid_extensions and any(
+                c in args.file for c in "=()[]{}'\""
+            )
+            if looks_like_code and not file_path.exists():
+                _fail("Missing filename. The first argument should be an Excel file.")
+                _info('Example: headless-excel eval file.xlsx "ws = ctx.active"')
+                _info(
+                    "Example: echo 'print(ctx.active)' | headless-excel eval file.xlsx"
+                )
+                sys.exit(1)
+
+            if args.code == "-":
+                readable, _, _ = select.select([sys.stdin], [], [], 0.1)
+                if not readable:
+                    _fail("No code provided. Pass code as argument or pipe via stdin.")
+                    _info('Example: headless-excel eval file.xlsx "ws = ctx.active"')
+                    _info(
+                        "Example: echo 'print(ctx.active)' | headless-excel eval file.xlsx"
+                    )
+                    sys.exit(1)
+                code = sys.stdin.read()
+            else:
+                code = args.code
             with run(args.file) as ctx:
                 exec(code, {"ctx": ctx, "NumberFormats": NumberFormats})
 
