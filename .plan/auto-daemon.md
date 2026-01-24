@@ -1,0 +1,2 @@
+- try to start daemon automatically on any ctx manager **enter**
+- only if fail we fall back to the cold start method
