@@ -273,6 +273,9 @@ def main():
     p_watch.add_argument(
         "--ws-port", type=int, default=8765, help="WebSocket port (default: 8765)"
     )
+    p_watch.add_argument(
+        "--open", action="store_true", help="Open browser automatically"
+    )
 
     # libreoffice
     p_libre = subparsers.add_parser(
@@ -327,7 +330,14 @@ def main():
 
         case "watch":
             try:
-                asyncio.run(watch(args.file, http_port=args.port, ws_port=args.ws_port))
+                asyncio.run(
+                    watch(
+                        args.file,
+                        http_port=args.port,
+                        ws_port=args.ws_port,
+                        open_browser=args.open,
+                    )
+                )
             except KeyboardInterrupt:
                 print("\nStopped")
             except (FileNotFoundError, ValueError) as e:

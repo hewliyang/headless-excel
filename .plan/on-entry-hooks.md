@@ -1,3 +1,0 @@
-- when enter context manager
-- i think only have access to the file being edited
-- can use to autolaunch the watcher & open localhost:8080

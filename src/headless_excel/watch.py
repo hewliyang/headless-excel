@@ -2,6 +2,7 @@
 
 import asyncio
 import threading
+import webbrowser
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
@@ -226,8 +227,17 @@ class FileWatcher(FileSystemEventHandler):
             asyncio.run_coroutine_threadsafe(self.callback(), self.loop)
 
 
-async def watch(file: str, http_port: int = 8080, ws_port: int = 8765):
-    """Start the watch server for an Excel file."""
+async def watch(
+    file: str, http_port: int = 8080, ws_port: int = 8765, open_browser: bool = False
+):
+    """Start the watch server for an Excel file.
+
+    Args:
+        file: Path to the Excel file to watch
+        http_port: HTTP server port (default: 8080)
+        ws_port: WebSocket server port (default: 8765)
+        open_browser: If True, automatically open browser to the viewer
+    """
     file_path = Path(file).resolve()
 
     if not file_path.exists():
@@ -268,11 +278,15 @@ async def watch(file: str, http_port: int = 8080, ws_port: int = 8765):
     observer.schedule(watcher, str(file_path.parent), recursive=False)
     observer.start()
 
+    url = f"http://localhost:{http_port}"
     print(f"Watching {file_path.name}")
-    print(f"  http://localhost:{http_port}")
+    print(f"  {url}")
     print(f"  ws://localhost:{ws_port}")
     print()
     print("Press Ctrl+C to stop")
+
+    if open_browser:
+        webbrowser.open(url)
 
     # Start WebSocket server
     try:
