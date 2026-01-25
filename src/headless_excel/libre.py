@@ -149,7 +149,8 @@ def _cold_recalc(filename: str | Path, timeout: int = 30) -> None:
         raise RecalcError("Failed to setup LibreOffice macro")
 
     soffice = get_soffice_path()
-    assert soffice is not None  # ensured by ensure_libreoffice_installed()
+    if soffice is None:
+        raise RecalcError("LibreOffice soffice executable not found")
 
     cmd = [
         soffice,
