@@ -18,6 +18,60 @@ SOCKET_TIMEOUT = 30
 # File paths
 PID_FILE = Path.home() / ".headless-excel" / "daemon.pid"
 
+# Python macro that runs inside LibreOffice
+# Creates a TCP server and handles PING/RECALC/QUIT commands
+UNOBRIDGE_MACRO = '''\
+"""TCP bridge for headless-excel recalculation daemon."""
+import socket
+import uno
+
+def start_server(*args):
+    """Start TCP server for recalc commands."""
+    ctx = uno.getComponentContext()
+    smgr = ctx.ServiceManager
+    desktop = smgr.createInstanceWithContext("com.sun.star.frame.Desktop", ctx)
+
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(('127.0.0.1', 2023))
+    server.listen(5)
+
+    while True:
+        try:
+            conn, addr = server.accept()
+            conn.settimeout(30)
+            data = conn.recv(4096).decode('utf-8').strip()
+
+            if data == "PING":
+                conn.send(b"PONG")
+            elif data == "QUIT":
+                conn.send(b"OK")
+                conn.close()
+                server.close()
+                desktop.terminate()
+                break
+            elif data.startswith("RECALC:"):
+                filepath = data[7:]
+                try:
+                    url = uno.systemPathToFileUrl(filepath)
+                    doc = desktop.loadComponentFromURL(url, "_blank", 0, ())
+                    doc.calculateAll()
+                    doc.store()
+                    doc.close(True)
+                    conn.send(b"OK")
+                except Exception as e:
+                    conn.send(f"ERROR:{e}".encode())
+            else:
+                conn.send(b"ERROR:Unknown command")
+            conn.close()
+        except socket.timeout:
+            continue
+        except Exception:
+            break
+
+g_exportedScripts = (start_server,)
+'''
+
 # Install instructions per platform
 _INSTALL_INSTRUCTIONS = {
     "darwin": "brew install --cask libreoffice",
