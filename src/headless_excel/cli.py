@@ -2,8 +2,6 @@
 
 import argparse
 import asyncio
-import select
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -11,7 +9,7 @@ from pathlib import Path
 
 from headless_excel import NumberFormats, create, run
 from headless_excel.daemon import is_daemon_running, start_daemon, stop_daemon
-from headless_excel.daemon.base import PID_FILE
+from headless_excel.daemon.base import PID_FILE, get_soffice_path
 from headless_excel.hooks import get_registry
 from headless_excel.libre import setup_libreoffice_macro
 from headless_excel.watch import watch
@@ -20,6 +18,11 @@ GREEN = "\033[32m"
 RED = "\033[31m"
 DIM = "\033[2m"
 RESET = "\033[0m"
+
+# Ensure UTF-8 encoding for Unicode symbols on Windows
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+    sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
 
 def _ok(msg: str) -> None:
@@ -52,9 +55,12 @@ def _find_hook_files(directory: Path) -> list[Path]:
 
 def _get_libreoffice_version() -> str | None:
     """Get LibreOffice version string, or None if unavailable."""
+    soffice = get_soffice_path()
+    if not soffice:
+        return None
     try:
         result = subprocess.run(
-            ["soffice", "--version"],
+            [soffice, "--version"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -86,17 +92,19 @@ def _run_recalc_test() -> tuple[bool, str]:
 
 def _check_libreoffice() -> tuple[bool, str | None]:
     """Check if LibreOffice is available. Returns (found, path)."""
-    soffice = shutil.which("soffice")
+    soffice = get_soffice_path()
     if soffice:
         _ok(f"LibreOffice found: {soffice}")
         if version := _get_libreoffice_version():
             _info(version)
         return True, soffice
 
-    _fail("LibreOffice not found in PATH")
+    _fail("LibreOffice not found")
     _info("Install it:")
     if sys.platform == "darwin":
         _info("brew install --cask libreoffice", indent=2)
+    elif sys.platform == "win32":
+        _info("Download from https://www.libreoffice.org/download/", indent=2)
     else:
         _info("sudo apt install libreoffice libreoffice-calc", indent=2)
     return False, None
@@ -314,8 +322,9 @@ def main():
                 sys.exit(1)
 
             if args.code == "-":
-                readable, _, _ = select.select([sys.stdin], [], [], 0.1)
-                if not readable:
+                # Check if stdin has data - use isatty() which works cross-platform
+                # If stdin is a TTY, no data is being piped in
+                if sys.stdin.isatty():
                     _fail("No code provided. Pass code as argument or pipe via stdin.")
                     _info('Example: headless-excel eval file.xlsx "ws = ctx.active"')
                     _info(

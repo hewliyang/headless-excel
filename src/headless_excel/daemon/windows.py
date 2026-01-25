@@ -1,12 +1,10 @@
-"""macOS daemon implementation using Python macro inside LibreOffice.
+"""Windows daemon implementation using Python macro inside LibreOffice.
 
-On macOS, LibreOffice bundles its own Python framework and uses @loader_path
-relative linking, making it completely isolated from system/venv Python.
+On Windows, LibreOffice bundles its own Python interpreter, similar to macOS.
 This allows us to run Python macros directly inside LibreOffice.
 """
 
 import os
-import signal
 import subprocess
 import time
 from pathlib import Path
@@ -21,8 +19,9 @@ from headless_excel.errors import RecalcError
 
 
 def _get_libreoffice_user_dir() -> Path:
-    """Get the LibreOffice user directory for macOS."""
-    return Path.home() / "Library/Application Support/LibreOffice/4/user"
+    """Get the LibreOffice user directory for Windows."""
+    appdata = os.environ.get("APPDATA", str(Path.home() / "AppData/Roaming"))
+    return Path(appdata) / "LibreOffice/4/user"
 
 
 def _get_python_macro_dir() -> Path:
@@ -99,8 +98,8 @@ def _install_daemon_macro() -> bool:
     return True
 
 
-def start_daemon_macos(wait: bool, timeout: float) -> int:
-    """Start the daemon on macOS using Python macro inside LibreOffice."""
+def start_daemon_windows(wait: bool, timeout: float) -> int:
+    """Start the daemon on Windows using Python macro inside LibreOffice."""
     if not _install_daemon_macro():
         raise RecalcError("Failed to install LibreOffice macro")
 
@@ -117,11 +116,12 @@ def start_daemon_macos(wait: bool, timeout: float) -> int:
         "vnd.sun.star.script:unobridge.py$start_server?language=Python&location=user",
     ]
 
+    # On Windows, use CREATE_NEW_PROCESS_GROUP for proper process management
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        start_new_session=True,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
     )
 
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -134,14 +134,14 @@ def start_daemon_macos(wait: bool, timeout: float) -> int:
                 return proc.pid
             time.sleep(0.2)
 
-        stop_daemon_macos()
+        stop_daemon_windows()
         raise RecalcError(f"Daemon failed to start within {timeout} seconds")
 
     return proc.pid
 
 
-def stop_daemon_macos() -> bool:
-    """Stop the macOS daemon."""
+def stop_daemon_windows() -> bool:
+    """Stop the Windows daemon."""
     stopped = False
 
     if is_daemon_running():
@@ -155,19 +155,23 @@ def stop_daemon_macos() -> bool:
     if PID_FILE.exists():
         try:
             pid = int(PID_FILE.read_text().strip())
-            os.killpg(pid, signal.SIGTERM)
+            # Use taskkill to terminate the process tree on Windows
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True,
+            )
             stopped = True
-        except (ProcessLookupError, ValueError, PermissionError):
+        except (ValueError, subprocess.SubprocessError):
             pass
         PID_FILE.unlink(missing_ok=True)
 
+    # Kill any orphaned soffice processes
     try:
         subprocess.run(
-            ["pkill", "-f", "unobridge.py"],
+            ["taskkill", "/F", "/IM", "soffice.bin", "/T"],
             capture_output=True,
-            timeout=5,
         )
-    except Exception:
+    except subprocess.SubprocessError:
         pass
 
     return stopped

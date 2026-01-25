@@ -9,6 +9,7 @@ from sys import platform
 from headless_excel.daemon import is_daemon_running
 from headless_excel.daemon.base import (
     ensure_libreoffice_installed,
+    get_soffice_path,
     send_daemon_command,
 )
 from headless_excel.errors import RecalcError
@@ -35,6 +36,9 @@ def _get_libreoffice_user_dir() -> Path:
     """Get the LibreOffice user directory for the current platform."""
     if platform == "darwin":
         return Path.home() / "Library/Application Support/LibreOffice/4/user"
+    elif platform == "win32":
+        appdata = os.environ.get("APPDATA", str(Path.home() / "AppData/Roaming"))
+        return Path(appdata) / "LibreOffice/4/user"
     return Path.home() / ".config/libreoffice/4/user"
 
 
@@ -55,18 +59,35 @@ def _get_macro_uri() -> str:
 
 def _run_soffice(cmd: list[str], timeout: int) -> tuple[int, str]:
     """Run soffice command with timeout and process group termination."""
-    proc = subprocess.Popen(
-        cmd,
-        start_new_session=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    if platform == "win32":
+        # On Windows, use CREATE_NEW_PROCESS_GROUP for process management
+        proc = subprocess.Popen(
+            cmd,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    else:
+        proc = subprocess.Popen(
+            cmd,
+            start_new_session=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
     try:
         _, stderr = proc.communicate(timeout=timeout)
         return proc.returncode, stderr or ""
     except subprocess.TimeoutExpired:
-        os.killpg(proc.pid, signal.SIGTERM)
+        if platform == "win32":
+            # On Windows, use taskkill to terminate the process tree
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                capture_output=True,
+            )
+        else:
+            os.killpg(proc.pid, signal.SIGTERM)
         proc.wait()
         raise RecalcError(f"LibreOffice command timed out after {timeout} seconds")
 
@@ -101,10 +122,11 @@ def setup_libreoffice_macro() -> bool:
             return True
 
     if not macro_dir.exists():
+        soffice = get_soffice_path()
+        if not soffice:
+            return False
         try:
-            _run_soffice(
-                ["soffice", "--headless", "--terminate_after_init"], timeout=10
-            )
+            _run_soffice([soffice, "--headless", "--terminate_after_init"], timeout=10)
         except RecalcError:
             return False
         macro_dir.mkdir(parents=True, exist_ok=True)
@@ -128,8 +150,11 @@ def _cold_recalc(filename: str | Path, timeout: int = 30) -> None:
     if not setup_libreoffice_macro():
         raise RecalcError("Failed to setup LibreOffice macro")
 
+    soffice = get_soffice_path()
+    assert soffice is not None  # ensured by ensure_libreoffice_installed()
+
     cmd = [
-        "soffice",
+        soffice,
         "--headless",
         "--norestore",
         _get_macro_uri(),

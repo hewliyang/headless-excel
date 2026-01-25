@@ -13,7 +13,7 @@ def start_daemon(wait: bool = True, timeout: float = 15) -> int:
     """
     Start the LibreOffice daemon.
 
-    On macOS, uses Python macro embedded in LibreOffice.
+    On macOS/Windows, uses Python macro embedded in LibreOffice.
     On Linux, uses a helper process with system Python + UNO socket.
 
     Args:
@@ -38,6 +38,10 @@ def start_daemon(wait: bool = True, timeout: float = 15) -> int:
         from headless_excel.daemon.linux import start_daemon_linux
 
         return start_daemon_linux(wait, timeout)
+    elif platform == "win32":
+        from headless_excel.daemon.windows import start_daemon_windows
+
+        return start_daemon_windows(wait, timeout)
     else:
         from headless_excel.daemon.macos import start_daemon_macos
 
@@ -55,6 +59,10 @@ def stop_daemon() -> bool:
         from headless_excel.daemon.linux import stop_daemon_linux
 
         return stop_daemon_linux()
+    elif platform == "win32":
+        from headless_excel.daemon.windows import stop_daemon_windows
+
+        return stop_daemon_windows()
     else:
         from headless_excel.daemon.macos import stop_daemon_macos
 

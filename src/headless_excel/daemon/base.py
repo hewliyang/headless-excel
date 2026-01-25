@@ -1,5 +1,6 @@
 """Shared daemon constants and utilities."""
 
+import os
 import shutil
 import socket
 from functools import cache
@@ -21,13 +22,54 @@ PID_FILE = Path.home() / ".headless-excel" / "daemon.pid"
 _INSTALL_INSTRUCTIONS = {
     "darwin": "brew install --cask libreoffice",
     "linux": "sudo apt install libreoffice libreoffice-calc  # or dnf/pacman equivalent",
+    "win32": "Download from https://www.libreoffice.org/download/",
 }
+
+# Common Windows installation paths for LibreOffice
+# Use soffice.com (console wrapper) instead of soffice.exe for proper CLI behavior
+_WINDOWS_SOFFICE_PATHS = [
+    Path(os.environ.get("PROGRAMFILES", "C:\\Program Files"))
+    / "LibreOffice"
+    / "program"
+    / "soffice.com",
+    Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)"))
+    / "LibreOffice"
+    / "program"
+    / "soffice.com",
+    Path(os.environ.get("LOCALAPPDATA", ""))
+    / "Programs"
+    / "LibreOffice"
+    / "program"
+    / "soffice.com",
+]
+
+
+@cache
+def get_soffice_path() -> str | None:
+    """Get the path to soffice executable, checking common locations on Windows."""
+    # On Windows, prefer soffice.com (console wrapper) for proper CLI behavior
+    if platform == "win32":
+        # Check common installation directories first
+        for candidate in _WINDOWS_SOFFICE_PATHS:
+            if candidate.exists():
+                return str(candidate)
+        # Try PATH but look for .com version
+        path = shutil.which("soffice.com")
+        if path:
+            return path
+
+    # Try PATH (works for macOS/Linux)
+    path = shutil.which("soffice")
+    if path:
+        return path
+
+    return None
 
 
 @cache
 def _libreoffice_available() -> bool:
     """Check if LibreOffice is available (cached)."""
-    return shutil.which("soffice") is not None
+    return get_soffice_path() is not None
 
 
 def ensure_libreoffice_installed() -> None:
@@ -37,7 +79,7 @@ def ensure_libreoffice_installed() -> None:
             platform, "Install LibreOffice from https://www.libreoffice.org/download/"
         )
         raise LibreOfficeNotFoundError(
-            f"LibreOffice is required for formula recalculation but 'soffice' was not found in PATH.\n\n"
+            f"LibreOffice is required for formula recalculation but 'soffice' was not found.\n\n"
             f"Install it:\n  {instructions}"
         )
 
