@@ -29,8 +29,6 @@ def _get_python_macro_dir() -> Path:
     return _get_libreoffice_user_dir() / "Scripts/python"
 
 
-# Python macro that runs inside LibreOffice
-# Creates a TCP server and handles PING/RECALC/QUIT commands
 UNOBRIDGE_MACRO = '''\
 """TCP bridge for headless-excel recalculation daemon."""
 import socket
@@ -116,12 +114,11 @@ def start_daemon_windows(wait: bool, timeout: float) -> int:
         "vnd.sun.star.script:unobridge.py$start_server?language=Python&location=user",
     ]
 
-    # On Windows, use CREATE_NEW_PROCESS_GROUP for proper process management
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,  # type: ignore[attr-defined]
     )
 
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -155,7 +152,6 @@ def stop_daemon_windows() -> bool:
     if PID_FILE.exists():
         try:
             pid = int(PID_FILE.read_text().strip())
-            # Use taskkill to terminate the process tree on Windows
             subprocess.run(
                 ["taskkill", "/F", "/T", "/PID", str(pid)],
                 capture_output=True,

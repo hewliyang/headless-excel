@@ -322,8 +322,6 @@ def main():
                 sys.exit(1)
 
             if args.code == "-":
-                # Check if stdin has data - use isatty() which works cross-platform
-                # If stdin is a TTY, no data is being piped in
                 if sys.stdin.isatty():
                     _fail("No code provided. Pass code as argument or pipe via stdin.")
                     _info('Example: headless-excel eval file.xlsx "ws = ctx.active"')

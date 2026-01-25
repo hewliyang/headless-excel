@@ -60,7 +60,6 @@ def _get_macro_uri() -> str:
 def _run_soffice(cmd: list[str], timeout: int) -> tuple[int, str]:
     """Run soffice command with timeout and process group termination."""
     if platform == "win32":
-        # On Windows, use CREATE_NEW_PROCESS_GROUP for process management
         proc = subprocess.Popen(
             cmd,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
@@ -81,7 +80,6 @@ def _run_soffice(cmd: list[str], timeout: int) -> tuple[int, str]:
         return proc.returncode, stderr or ""
     except subprocess.TimeoutExpired:
         if platform == "win32":
-            # On Windows, use taskkill to terminate the process tree
             subprocess.run(
                 ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                 capture_output=True,
