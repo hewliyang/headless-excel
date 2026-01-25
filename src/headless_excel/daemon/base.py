@@ -36,7 +36,7 @@ _WINDOWS_SOFFICE_PATHS = [
     / "LibreOffice"
     / "program"
     / "soffice.com",
-    Path(os.environ.get("LOCALAPPDATA", ""))
+    Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local")))
     / "Programs"
     / "LibreOffice"
     / "program"
