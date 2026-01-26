@@ -1,0 +1,70 @@
+[project]
+name = "headless-excel"
+version = "0.1.0"
+description = "Excel automation tool for agents in headless environments"
+readme = "README.md"
+authors = [{ name = "Hew Li Yang", email = "hewliyang@u.nus.edu" }]
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = [
+    "excel",
+    "openpyxl",
+    "libreoffice",
+    "spreadsheet",
+    "automation",
+    "headless",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Spreadsheet",
+]
+dependencies = ["openpyxl>=3.1.0"]
+
+[project.optional-dependencies]
+watch = ["watchdog>=6.0.0", "websockets>=16.0"]
+
+[project.scripts]
+headless-excel = "headless_excel.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/hewliyang/headless-excel"
+Repository = "https://github.com/hewliyang/headless-excel"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]              # line length in XML macro strings
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
+
+[tool.ty.src]
+# linux_helper.py runs in LibreOffice's Python environment with UNO bindings
+exclude = ["src/headless_excel/daemon/linux_helper.py"]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.1.0",
+    "ty>=0.0.7",
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.1.0",
+    "formulas>=1.3.3",
+    "pre-commit>=4.0.0",
+    "headless-excel[watch]",
+]
