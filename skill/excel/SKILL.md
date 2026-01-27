@@ -95,6 +95,26 @@ ws.range('A1:D10').clear()  # clears values, formulas, and styles
 "
 ```
 
+## Iterative Calculations (Circular References)
+
+For formulas with circular references that should converge (e.g., goal-seek scenarios), enable iterative calculation on the workbook:
+
+```bash
+headless-excel eval model.xlsx "
+# Enable iterative calculations
+ctx.wb.calculation.iterate = True
+ctx.wb.calculation.iterateCount = 100   # max iterations
+ctx.wb.calculation.iterateDelta = 0.001 # convergence threshold
+
+ws = ctx.active
+ws['A1'] = 1            # seed value
+ws['B1'] = '=A1/2'
+ws['A1'] = '=B1+0.5'    # circular: A1 -> B1 -> A1, converges to A1=1, B1=0.5
+"
+```
+
+Without `iterate = True`, circular refs produce `#VALUE!` errors. With it enabled, LibreOffice iterates until convergence or max iterations.
+
 ## Best Practices
 
 The whole point of Excel is that values recalculate automatically when inputs change. Avoid computing values in Python and simply writing static numbers.
