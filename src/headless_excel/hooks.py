@@ -3,6 +3,7 @@
 Hooks allow users to run custom code at specific points in the Excel workflow
 without modifying the core library. Common use cases include:
 - Applying formatting conventions (e.g., financial modeling colors)
+- Setting workbook defaults (e.g., hiding gridlines)
 - Validation and linting
 - Logging and auditing
 
@@ -11,9 +12,20 @@ Discovery:
     1. ./.headless-excel/hooks/*.py (project-local, takes precedence)
     2. ~/.headless-excel/hooks/*.py (global fallback)
 
+Hook Types:
+    - on_open: Called once when workbook is opened (before user code)
+    - pre_sync: Called before each sync() operation
+    - post_sync: Called after each sync() operation
+    - on_exit: Called when context manager exits
+
 Usage:
     # ~/.headless-excel/hooks/my_hooks.py
-    from headless_excel import ExcelContext, SyncResult, pre_sync, post_sync
+    from headless_excel import ExcelContext, SyncResult, on_open, pre_sync, post_sync
+
+    @on_open
+    def set_defaults(ctx: ExcelContext) -> None:
+        for ws in ctx.workbook.worksheets:
+            ws._formula_ws.sheet_view.showGridLines = False
 
     @pre_sync
     def before_sync(ctx: ExcelContext) -> None:
@@ -56,11 +68,12 @@ logger = logging.getLogger(__name__)
 # Type Aliases
 # ============================================================================
 
+OnOpenFn = Callable[["ExcelContext"], None]
 PreSyncFn = Callable[["ExcelContext"], None]
 PostSyncFn = Callable[["ExcelContext", "SyncResult"], None]
 OnExitFn = Callable[["ExcelContext"], None]
 
-F = TypeVar("F", PreSyncFn, PostSyncFn, OnExitFn)
+F = TypeVar("F", OnOpenFn, PreSyncFn, PostSyncFn, OnExitFn)
 
 HookOutput = Literal["stderr", "stdout", "none"]
 
@@ -84,6 +97,7 @@ class HookEntry(Generic[T_Hook]):
 class HookRegistry:
     """Container for registered hooks."""
 
+    on_open: list[HookEntry[OnOpenFn]] = field(default_factory=list)
     pre_sync: list[HookEntry[PreSyncFn]] = field(default_factory=list)
     post_sync: list[HookEntry[PostSyncFn]] = field(default_factory=list)
     on_exit: list[HookEntry[OnExitFn]] = field(default_factory=list)
@@ -93,6 +107,7 @@ class HookRegistry:
 
     def clear(self) -> None:
         """Clear all hooks and reset discovery state."""
+        self.on_open.clear()
         self.pre_sync.clear()
         self.post_sync.clear()
         self.on_exit.clear()
@@ -107,6 +122,53 @@ _registry = HookRegistry()
 # ============================================================================
 # Decorator API
 # ============================================================================
+
+
+@overload
+def on_open(fn: OnOpenFn) -> OnOpenFn: ...
+
+
+@overload
+def on_open(*, output: HookOutput = "stderr") -> Callable[[OnOpenFn], OnOpenFn]: ...
+
+
+def on_open(
+    fn: OnOpenFn | None = None, *, output: HookOutput = "stderr"
+) -> OnOpenFn | Callable[[OnOpenFn], OnOpenFn]:
+    """Register an on-open hook.
+
+    Called once when the workbook is opened, before user code runs.
+    Use this to set workbook defaults that users can override.
+
+    Args:
+        output: Where to send captured output. Options:
+            - "stderr" (default): Print to stderr with prefix
+            - "stdout": Print to stdout with prefix
+            - "none": Suppress output entirely
+
+    Example:
+        from headless_excel import ExcelContext, on_open
+
+        @on_open
+        def set_defaults(ctx: ExcelContext) -> None:
+            # Hide gridlines on all sheets
+            for ws in ctx.workbook.worksheets:
+                ws._formula_ws.sheet_view.showGridLines = False
+
+        @on_open
+        def create_only_setup(ctx: ExcelContext) -> None:
+            # Only run for new workbooks
+            if ctx._is_new_workbook:
+                print("Setting up new workbook...")
+    """
+
+    def decorator(f: OnOpenFn) -> OnOpenFn:
+        _registry.on_open.append(HookEntry(f, output))
+        return f
+
+    if fn is not None:
+        return decorator(fn)
+    return decorator
 
 
 @overload
@@ -263,6 +325,31 @@ class ExtensionAPI:
             def log_result(ctx: ExcelContext, result) -> None:
                 print(f"Done: {result.success}")
     """
+
+    @overload
+    def on_open(self, fn: OnOpenFn) -> OnOpenFn: ...
+
+    @overload
+    def on_open(
+        self, *, output: HookOutput = "stderr"
+    ) -> Callable[[OnOpenFn], OnOpenFn]: ...
+
+    def on_open(
+        self, fn: OnOpenFn | None = None, *, output: HookOutput = "stderr"
+    ) -> OnOpenFn | Callable[[OnOpenFn], OnOpenFn]:
+        """Register an on-open hook.
+
+        Args:
+            output: Where to send output ("stderr", "stdout", or "none")
+        """
+
+        def decorator(f: OnOpenFn) -> OnOpenFn:
+            _registry.on_open.append(HookEntry(f, output))
+            return f
+
+        if fn is not None:
+            return decorator(fn)
+        return decorator
 
     @overload
     def pre_sync(self, fn: PreSyncFn) -> PreSyncFn: ...
@@ -468,6 +555,19 @@ def _run_hook_with_prefix(
         dest = sys.stderr if output == "stderr" else sys.stdout
         for line in captured_output.rstrip("\n").split("\n"):
             print(f"{prefix} {line}", file=dest)
+
+
+def run_on_open_hooks(ctx: ExcelContext) -> None:
+    """Run all on-open hooks."""
+    registry = get_registry()
+    for entry in registry.on_open:
+        try:
+            _run_hook_with_prefix(
+                entry.fn, lambda e=entry: e.fn(ctx), "on-open", entry.output
+            )
+        except Exception as e:
+            logger.error(f"On-open hook {_get_hook_name(entry.fn)} failed: {e}")
+            raise
 
 
 def run_pre_sync_hooks(ctx: ExcelContext) -> None:
