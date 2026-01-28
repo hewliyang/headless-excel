@@ -5,6 +5,7 @@ import asyncio
 import subprocess
 import sys
 import tempfile
+from importlib.metadata import version
 from pathlib import Path
 
 from headless_excel import NumberFormats, create, run
@@ -256,6 +257,12 @@ def main():
     parser = argparse.ArgumentParser(
         prog="headless-excel",
         description="Excel automation tool for headless environments",
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"%(prog)s {version('headless-excel')}",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
