@@ -153,6 +153,7 @@ def _print_hooks_info() -> None:
     # Show registered hooks
     registry = get_registry()
     hook_types = [
+        ("on_open", registry.on_open),
         ("pre_sync", registry.pre_sync),
         ("post_sync", registry.post_sync),
         ("on_exit", registry.on_exit),

@@ -19,6 +19,7 @@ from headless_excel.hooks import (
     extension,
     get_discovery_errors,
     on_exit,
+    on_open,
     post_sync,
     pre_sync,
 )
@@ -49,6 +50,7 @@ __all__ = [
     "extension",
     "get_discovery_errors",
     "on_exit",
+    "on_open",
     "post_sync",
     "pre_sync",
     # Proxies

@@ -23,6 +23,7 @@ from headless_excel.errors import (
 )
 from headless_excel.hooks import (
     run_on_exit_hooks,
+    run_on_open_hooks,
     run_post_sync_hooks,
     run_pre_sync_hooks,
 )
@@ -525,6 +526,7 @@ def _run_context(
     """Internal context manager for Excel operations.
 
     Hooks are called automatically:
+    - on_open: once when workbook is opened (before user code)
     - pre_sync: before each sync()
     - post_sync: after each sync()
     - on_exit: when context manager exits
@@ -541,6 +543,7 @@ def _run_context(
         _code=_code,
     )
     try:
+        run_on_open_hooks(ctx)
         yield ctx
 
         # Always sync on exit - detecting all mutations is impractical
@@ -577,6 +580,7 @@ def run(
     and optionally auto-syncs on exit.
 
     Hooks are called automatically at key points:
+    - on_open: once when workbook is opened (e.g., set defaults)
     - pre_sync: before each sync() (e.g., auto-formatting)
     - post_sync: after each sync() (e.g., logging)
     - on_exit: when context exits (e.g., linting)
@@ -633,6 +637,7 @@ def create(
     """Create a new Excel file.
 
     Hooks are called automatically at key points:
+    - on_open: once when workbook is created (e.g., set defaults)
     - pre_sync: before each sync() (e.g., auto-formatting)
     - post_sync: after each sync() (e.g., logging)
     - on_exit: when context exits (e.g., linting)

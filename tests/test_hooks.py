@@ -8,6 +8,7 @@ from headless_excel import (
     create,
     extension,
     on_exit,
+    on_open,
     post_sync,
     pre_sync,
 )
@@ -53,11 +54,26 @@ class TestHookDecorators:
         hook_fns = [entry.fn for entry in registry.on_exit]
         assert my_hook in hook_fns
 
+    def test_on_open_decorator(self):
+        calls = []
+
+        @on_open
+        def my_hook(ctx: ExcelContext) -> None:
+            calls.append("on_open")
+
+        registry = get_registry()
+        hook_fns = [entry.fn for entry in registry.on_open]
+        assert my_hook in hook_fns
+
 
 class TestExtensionFactory:
     def test_extension_decorator(self):
         @extension
         def my_extension(api):
+            @api.on_open
+            def hook0(ctx: ExcelContext) -> None:
+                pass
+
             @api.pre_sync
             def hook1(ctx: ExcelContext) -> None:
                 pass
@@ -67,6 +83,8 @@ class TestExtensionFactory:
                 pass
 
         registry = get_registry()
+        hook_names = [getattr(entry.fn, "__name__", "") for entry in registry.on_open]
+        assert "hook0" in hook_names
         hook_names = [getattr(entry.fn, "__name__", "") for entry in registry.pre_sync]
         assert "hook1" in hook_names
         hook_names = [getattr(entry.fn, "__name__", "") for entry in registry.on_exit]
@@ -102,6 +120,34 @@ class TestExtensionFactory:
 
 
 class TestHookExecution:
+    def test_on_open_called_before_user_code(self, tmp_path: Path):
+        calls = []
+
+        @on_open
+        def record_call(ctx: ExcelContext) -> None:
+            calls.append("on_open")
+
+        path = tmp_path / "test.xlsx"
+        # on_open should be called before we even get inside the with block
+        with create(path, auto_sync=False) as ctx:
+            assert calls == ["on_open"]  # Already called!
+            ctx.active["A1"] = 100
+
+    def test_on_open_can_set_defaults(self, tmp_path: Path):
+        """on_open hooks can set defaults that user code can override."""
+
+        @on_open
+        def set_default(ctx: ExcelContext) -> None:
+            ctx.active["A1"] = "default"
+
+        path = tmp_path / "test.xlsx"
+        with create(path, auto_sync=False) as ctx:
+            # Hook set the default
+            assert ctx.active["A1"].value == "default"
+            # User can override
+            ctx.active["A1"] = "overridden"
+            assert ctx.active["A1"].value == "overridden"
+
     def test_pre_sync_called_before_sync(self, tmp_path: Path):
         calls = []
 
@@ -161,6 +207,35 @@ class TestHookExecution:
             ctx.sync()
 
         assert calls == ["first", "second"]
+
+    def test_full_hook_lifecycle(self, tmp_path: Path):
+        """Test that hooks run in correct order: on_open -> pre_sync -> post_sync -> on_exit."""
+        calls = []
+
+        @on_open
+        def open_hook(ctx: ExcelContext) -> None:
+            calls.append("on_open")
+
+        @pre_sync
+        def pre_hook(ctx: ExcelContext) -> None:
+            calls.append("pre_sync")
+
+        @post_sync
+        def post_hook(ctx: ExcelContext, result: SyncResult) -> None:
+            calls.append("post_sync")
+
+        @on_exit
+        def exit_hook(ctx: ExcelContext) -> None:
+            calls.append("on_exit")
+
+        path = tmp_path / "test.xlsx"
+        with create(path, auto_sync=False) as ctx:
+            assert calls == ["on_open"]
+            ctx.active["A1"] = 100
+            ctx.sync()
+            assert calls == ["on_open", "pre_sync", "post_sync"]
+
+        assert calls == ["on_open", "pre_sync", "post_sync", "on_exit"]
 
 
 class TestHookDiscovery:
@@ -259,6 +334,10 @@ class TestHookOutputConfiguration:
 
 class TestClearHooks:
     def test_clear_hooks_removes_all(self):
+        @on_open
+        def hook0(ctx: ExcelContext) -> None:
+            pass
+
         @pre_sync
         def hook1(ctx: ExcelContext) -> None:
             pass
@@ -271,10 +350,12 @@ class TestClearHooks:
         def hook3(ctx: ExcelContext) -> None:
             pass
 
+        assert len(_registry.on_open) > 0
         assert len(_registry.pre_sync) > 0
 
         clear_hooks()
 
+        assert len(_registry.on_open) == 0
         assert len(_registry.pre_sync) == 0
         assert len(_registry.post_sync) == 0
         assert len(_registry.on_exit) == 0
