@@ -371,6 +371,7 @@ dev = [
     { name = "formulas" },
     { name = "headless-excel", extra = ["watch"] },
     { name = "ipykernel" },
+    { name = "ooouno" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -392,6 +393,7 @@ dev = [
     { name = "formulas", specifier = ">=1.3.3" },
     { name = "headless-excel", extras = ["watch"] },
     { name = "ipykernel", specifier = ">=7.1.0" },
+    { name = "ooouno", specifier = ">=3.0.0" },
     { name = "pre-commit", specifier = ">=4.0.0" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
@@ -734,6 +736,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/0f/4e/6dff3733162d4a96140f0195f3b529c2d56f90d3245c8c1b506913d11f91/numpy-financial-1.0.0.tar.gz", hash = "sha256:f84341bc62b2485d5604a73d5fac7e91975b4b9cd5f4a5a9cf608902ea00cb40", size = 13185 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6a/be/d07585e440d58835bad8f1c9ca7823b5252ffeda4c797e653a20215fca65/numpy_financial-1.0.0-py3-none-any.whl", hash = "sha256:bae534b357516f12258862d1f0181d911032d0467f215bfcd1c264b4da579047", size = 14025 },
+]
+
+[[package]]
+name = "ooouno"
+version = "3.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "types-unopy" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/97/2e/9d12012eac0973f5c9e27fab8ccc5adc3bdf1714f3e47f5d8b1d891dc362/ooouno-3.0.0.tar.gz", hash = "sha256:e4b4208387bda46c2ba777f9e406fba22d1eb4367d0ec56403f4fc23bb50d580", size = 2225207 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f9/3d/d7f5f71958020e945f5a9c2923fc5d4f473d5ab92af4c61eb09f8014dc45/ooouno-3.0.0-py3-none-any.whl", hash = "sha256:237af5c39c41892e00dacb7d89c18b62025af080c96579bb3c24051f0113fd65", size = 9864269 },
 ]
 
 [[package]]
@@ -1491,6 +1506,27 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/1c/5b/1a6ff1495975cd1c02aa8d03bc5c9d8006eaeb8bf354446f88d70f0518fd/ty-0.0.7-py3-none-win32.whl", hash = "sha256:ae89bb8dc50deb66f34eab3113aa61ac5d7f85ecf16279e5918548085a89021c", size = 9295092 },
     { url = "https://files.pythonhosted.org/packages/ff/f6/47e9364635d048002354f84d2d0d6dfc9eb166dc67850739f88e1fec4fc5/ty-0.0.7-py3-none-win_amd64.whl", hash = "sha256:25bd20e3d4d0f07b422f9b42711ba24d28116031273bd23dbda66cec14df1c06", size = 10162816 },
     { url = "https://files.pythonhosted.org/packages/7f/f4/c4fc28410c4493982b7481fb23f62bacb02fd2912ebec3b9bc7de18bebb8/ty-0.0.7-py3-none-win_arm64.whl", hash = "sha256:c87d27484dba9fca0053b6a9eee47eecc760aab2bbb8e6eab3d7f81531d1ad0c", size = 9653112 },
+]
+
+[[package]]
+name = "types-uno-script"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/66/39/ccbbb2bcd3dd706551f084d60d49cb751935b024c893b8085337b4a9ee2b/types-uno-script-0.1.1.tar.gz", hash = "sha256:0ec3adf5567b289b0e922a3b046593a374206f73a8ed3230a72afc7de5fdb7c2", size = 8828 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/21/aca114495b60b70b0143324291f39f67b30ab3776a6fb65c79370194c7db/types_uno_script-0.1.1-py3-none-any.whl", hash = "sha256:092f710bd187825957ec67ee1bd2c8f7094b4d4a728966e70d3870239656407a", size = 9274 },
+]
+
+[[package]]
+name = "types-unopy"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "types-uno-script" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/29/c9/35d81c34d98239178c246cc095f5d62168498be6c51f6020138aa572ea6a/types_unopy-2.0.0.tar.gz", hash = "sha256:b3bacd0cc95d63efd5c8db052d72c7edd4756acbd90761d88ea51cf171f7223d", size = 1445954 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3d/51/0717c18e667d53cff55b30af07ccd00f4bdbce9ab278fcc57724d340f1f3/types_unopy-2.0.0-py3-none-any.whl", hash = "sha256:748673362338851088d7ab88b51132c5f42a4e56600a55c27448b44327b023bf", size = 5200911 },
 ]
 
 [[package]]

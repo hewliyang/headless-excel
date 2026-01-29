@@ -67,4 +67,5 @@ dev = [
     "formulas>=1.3.3",
     "pre-commit>=4.0.0",
     "headless-excel[watch]",
+    "ooouno>=3.0.0",
 ]
