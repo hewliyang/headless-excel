@@ -14,10 +14,12 @@ from typing import Any, TypeVar
 from openpyxl import Workbook, load_workbook
 
 from headless_excel.daemon import is_daemon_running, start_daemon
+from headless_excel.daemon.base import send_daemon_command
 from headless_excel.errors import (
     ErrorDetail,
     ErrorScanResult,
     FormulaError,
+    RecalcError,
     SyncError,
     get_max_errors_displayed,
 )
@@ -149,6 +151,11 @@ class ExcelContext:
         self._first_sheet_created = False
         self._last_sync_result: SyncResult | None = None
         self.__code = _code
+        self._uno_session_id: str | None = None  # Persistent UNO session
+        self._uno_synced_once = False  # True after first sync with UNO
+        self._modified_cells: set[tuple[str, str]] = (
+            set()
+        )  # {(sheet_name, cell_ref), ...}
 
         if create:
             self._workbook = Workbook()
@@ -302,10 +309,121 @@ class ExcelContext:
 
         return self.workbook.create_sheet(title, index)
 
+    def _close_uno_session(self) -> None:
+        """Close any open UNO session."""
+        if self._uno_session_id is not None:
+            try:
+                send_daemon_command(f"CLOSE:{self._uno_session_id}")
+            except Exception:
+                pass
+            self._uno_session_id = None
+
+    def _sync_with_uno_session(self) -> None:
+        """Sync using UNO session for faster recalculation.
+
+        Keeps UNO session open across multiple syncs. On first sync, opens
+        the file. On subsequent syncs, uses RELOAD to pick up openpyxl
+        changes (faster than full close+open cycle).
+
+        Reads values directly from UNO to avoid openpyxl data_only reload.
+        """
+        import json
+
+        from openpyxl.utils import get_column_letter
+
+        abs_path = str(self.path.absolute())
+
+        if self._uno_session_id is not None:
+            # Existing session - reload to pick up openpyxl changes
+            response = send_daemon_command(
+                f"RELOAD:{self._uno_session_id}", timeout=self._recalc_timeout
+            )
+            if response.startswith("ERROR:"):
+                # Session invalid, clear it and open fresh
+                self._uno_session_id = None
+            # else: reload succeeded, continue with same session
+
+        if self._uno_session_id is None:
+            # No session or reload failed - open fresh
+            response = send_daemon_command(
+                f"OPEN:{abs_path}", timeout=self._recalc_timeout
+            )
+            if response.startswith("ERROR:"):
+                raise RecalcError(f"Failed to open in UNO: {response[6:]}")
+            if not response.startswith("SESSION:"):
+                raise RecalcError(f"Unexpected response: {response}")
+            self._uno_session_id = response[8:]
+
+        session_id = self._uno_session_id
+
+        try:
+            # Calculate all formulas in memory
+            response = send_daemon_command(f"CALC:{session_id}")
+            if response.startswith("ERROR:"):
+                raise RecalcError(f"CALC failed: {response[6:]}")
+
+            # Get sheet names
+            response = send_daemon_command(f"SHEETS:{session_id}")
+            if not response.startswith("SHEETS:"):
+                raise RecalcError(f"Failed to get sheets: {response}")
+            sheet_names = json.loads(response[7:])
+
+            # Create a fresh values workbook populated from UNO
+            self._values_workbook = Workbook()
+            default_sheet = self._values_workbook.active
+
+            for i, sheet_name in enumerate(sheet_names):
+                if i == 0 and default_sheet is not None:
+                    default_sheet.title = sheet_name
+                    values_ws = default_sheet
+                else:
+                    values_ws = self._values_workbook.create_sheet(sheet_name)
+
+                # Get dimensions from formula workbook
+                if (
+                    self._workbook is not None
+                    and sheet_name in self._workbook.sheetnames
+                ):
+                    formula_ws = self._workbook[sheet_name]
+                    max_row = formula_ws.max_row or 1
+                    max_col = formula_ws.max_column or 1
+
+                    if max_row > 0 and max_col > 0:
+                        # Get values from UNO for the used range
+                        end_col_letter = get_column_letter(max_col)
+                        range_ref = f"{sheet_name}!A1:{end_col_letter}{max_row}"
+
+                        response = send_daemon_command(
+                            f"GET_RANGE:{session_id}:{range_ref}"
+                        )
+                        if response.startswith("DATA:"):
+                            data = json.loads(response[5:])
+                            # Populate values worksheet
+                            for row_idx, row_data in enumerate(data, start=1):
+                                for col_idx, value in enumerate(row_data, start=1):
+                                    if value is not None and value != "":
+                                        values_ws.cell(row_idx, col_idx, value)
+
+            # Save to disk so file has cached values for future loads
+            response = send_daemon_command(f"SAVE:{session_id}")
+            if response.startswith("ERROR:"):
+                raise RecalcError(f"SAVE failed: {response[6:]}")
+
+            # Keep session open for potential reuse
+            # (will be closed on next sync or context close)
+
+        except Exception:
+            # On error, close session
+            self._close_uno_session()
+            raise
+
     def sync(self, raise_on_errors: bool = False) -> SyncResult:
         """Save, recalculate via LibreOffice, and reload with materialized values.
 
         This is the core operation - similar to OfficeJS ctx.sync().
+
+        When the LibreOffice daemon is running, uses optimized UNO session
+        to avoid expensive file reloading.
 
         Pre-sync and post-sync hooks are called automatically. Configure hooks
         by placing Python files in ./.headless-excel/hooks/ or ~/.headless-excel/hooks/.
@@ -331,14 +449,31 @@ class ExcelContext:
         except Exception as e:
             raise SyncError(f"Failed to save workbook: {e}") from e
 
-        # Recalculate via LibreOffice (raises RecalcError on failure)
-        recalc(self.path, timeout=self._recalc_timeout)
+        # Check if daemon is running for optimized path
+        use_uno_session = is_daemon_running()
 
-        # Reload formula workbook (to pick up any LibreOffice changes)
-        self._workbook = load_workbook(self.path)
+        if use_uno_session:
+            try:
+                # Use UNO session for fast recalc and value reading
+                # This reads values directly from UNO - no openpyxl reload needed!
+                self._sync_with_uno_session()
 
-        # Load values workbook
-        self._values_workbook = load_workbook(self.path, data_only=True)
+                # Don't reload _workbook - we already have the formulas in memory
+                # LibreOffice may normalize formulas but that's cosmetic
+
+            except RecalcError:
+                # Fall back to standard recalc if UNO session fails
+                use_uno_session = False
+
+        if not use_uno_session:
+            # Standard path: recalculate via LibreOffice
+            recalc(self.path, timeout=self._recalc_timeout)
+
+            # Reload formula workbook (to pick up any LibreOffice changes)
+            self._workbook = load_workbook(self.path)
+
+            # Load values workbook
+            self._values_workbook = load_workbook(self.path, data_only=True)
 
         # Update proxy with reloaded workbooks (preserves object identity)
         if self._proxy:
@@ -488,7 +623,10 @@ class ExcelContext:
         return details
 
     def close(self) -> None:
-        """Close both workbooks."""
+        """Close workbooks and UNO session."""
+        # Close UNO session first
+        self._close_uno_session()
+
         if self._workbook:
             self._workbook.close()
             self._workbook = None

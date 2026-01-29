@@ -14,6 +14,8 @@ from headless_excel.daemon import is_daemon_running, start_daemon, stop_daemon
 from headless_excel.daemon.base import PID_FILE, get_soffice_path
 from headless_excel.hooks import get_registry
 from headless_excel.libre import setup_libreoffice_macro
+from headless_excel.uno_context import UnoContext
+from headless_excel.uno_session import UnoSession
 
 GREEN = "\033[32m"
 RED = "\033[31m"
@@ -293,6 +295,21 @@ def main():
         "--open", action="store_true", help="Open browser automatically"
     )
 
+    # uno_eval (secret/internal command for direct UNO code execution)
+    p_uno_eval = subparsers.add_parser("uno_eval", help=argparse.SUPPRESS)
+    p_uno_eval.add_argument("file", help="Excel file")
+    p_uno_eval.add_argument(
+        "code", nargs="?", default="-", help="UNO code to execute (default: stdin)"
+    )
+
+    # uno_run (secret - UnoContext with hooks support)
+    p_uno_run = subparsers.add_parser("uno_run", help=argparse.SUPPRESS)
+    p_uno_run.add_argument("file", help="Excel file")
+    p_uno_run.add_argument(
+        "code", nargs="?", default="-", help="UNO code to execute (default: stdin)"
+    )
+    p_uno_run.add_argument("--no-hooks", action="store_true", help="Disable hooks")
+
     # libreoffice
     p_libre = subparsers.add_parser(
         "libreoffice",
@@ -362,6 +379,52 @@ def main():
             except KeyboardInterrupt:
                 print("\nStopped")
             except (FileNotFoundError, ValueError) as e:
+                _fail(str(e))
+                sys.exit(1)
+
+        case "uno_eval":
+            # Secret command: execute UNO code directly in LibreOffice (no hooks)
+            file_path = Path(args.file)
+            if args.code == "-":
+                if sys.stdin.isatty():
+                    _fail("No code provided. Pass code as argument or pipe via stdin.")
+                    _info(
+                        'Example: headless-excel uno_eval file.xlsx "doc.calculateAll()"'
+                    )
+                    sys.exit(1)
+                code = sys.stdin.read()
+            else:
+                code = args.code
+
+            try:
+                with UnoSession(file_path) as s:
+                    result = s.exec(code)
+                    if result is not None:
+                        print(result)
+            except Exception as e:
+                _fail(str(e))
+                sys.exit(1)
+
+        case "uno_run":
+            # Secret command: UnoContext with hooks support
+            file_path = Path(args.file)
+            if args.code == "-":
+                if sys.stdin.isatty():
+                    _fail("No code provided. Pass code as argument or pipe via stdin.")
+                    _info(
+                        'Example: headless-excel uno_run file.xlsx "s = sheet(0); ..."'
+                    )
+                    sys.exit(1)
+                code = sys.stdin.read()
+            else:
+                code = args.code
+
+            try:
+                with UnoContext(file_path, hooks=not args.no_hooks) as ctx:
+                    result = ctx.exec(code)
+                    if result is not None:
+                        print(result)
+            except Exception as e:
                 _fail(str(e))
                 sys.exit(1)
 
