@@ -169,6 +169,103 @@ class PivotTable:
         self._attach()
         self._render()
 
+    @classmethod
+    def _adopt(cls, dest_ws, table) -> "PivotTable":
+        """Wrap an *existing* openpyxl ``TableDefinition`` loaded from a file.
+
+        Hydrates the internal spec (rows/columns/filters/values/style) from the
+        table so it can be inspected, mutated, or deleted through the same API
+        used for freshly-created pivots. No new model objects are created and the
+        table is *not* re-attached (it is already on ``dest_ws._pivots``).
+        """
+        self = cls.__new__(cls)
+        wb = dest_ws.parent
+        self._dest_ws = dest_ws
+        self._wb = wb
+        self._table = table
+        self._cache = getattr(table, "cache", None)
+        self._name = table.name
+        self._cache_id = table.cacheId
+        loc = table.location
+        self._anchor = loc.ref if loc else "A1"
+
+        src = None
+        if self._cache is not None and self._cache.cacheSource is not None:
+            src = self._cache.cacheSource.worksheetSource
+        if src is not None:
+            self._src_sheet = src.sheet
+            self._src_ref = src.ref
+        else:
+            self._src_sheet = _active_title(wb)
+            self._src_ref = None
+
+        if self._cache is not None and self._cache.cacheFields:
+            self._fields = [f.name for f in self._cache.cacheFields]
+        else:
+            self._fields = []
+        self._index = {n: i for i, n in enumerate(self._fields)}
+
+        def _name_at(idx: int) -> str:
+            if 0 <= idx < len(self._fields):
+                return self._fields[idx]
+            return f"Field{idx}"
+
+        self._rows = [
+            _name_at(f.x)
+            for f in (table.rowFields or [])
+            if f.x is not None and f.x >= 0
+        ]
+        self._cols = [
+            _name_at(f.x)
+            for f in (table.colFields or [])
+            if f.x is not None and f.x >= 0
+        ]
+        self._filters = [
+            _name_at(f.fld) for f in (table.pageFields or []) if f.fld is not None
+        ]
+        self._values = []
+        for df in table.dataFields or []:
+            field = _name_at(df.fld)
+            func = df.subtotal or "sum"
+            default = self._default_value_name(func, field)
+            disp = df.name if df.name and df.name != default else None
+            fmt = self._reverse_numfmt(df.numFmtId)
+            self._values.append((field, func, disp, fmt))
+
+        self._values_on_rows = bool(table.dataOnRows)
+        info = table.pivotTableStyleInfo
+        if info is not None:
+            self._style_name = info.name
+            self._style_opts = dict(
+                showRowStripes=bool(info.showRowStripes),
+                showColStripes=bool(info.showColStripes),
+                showRowHeaders=bool(info.showRowHeaders),
+                showColHeaders=bool(info.showColHeaders),
+                showLastColumn=bool(info.showLastColumn),
+            )
+        else:
+            self._style_name = None
+            self._style_opts = {}
+        return self
+
+    def _reverse_numfmt(self, numfmt_id) -> str | None:
+        """Best-effort map a numFmtId back to a format string for inspection."""
+        if numfmt_id is None:
+            return None
+        for fmt, fid in _BUILTIN_NUMFMT.items():
+            if fid == numfmt_id:
+                return fmt
+        from openpyxl.styles.numbers import BUILTIN_FORMATS
+
+        if numfmt_id in BUILTIN_FORMATS:
+            return BUILTIN_FORMATS[numfmt_id]
+        if numfmt_id >= 164:
+            try:
+                return self._wb._number_formats[numfmt_id - 164]
+            except (IndexError, AttributeError):
+                return None
+        return None
+
     def _read_header(self, sheet_name: str, ref: str) -> list[str]:
         if sheet_name not in self._wb.sheetnames:
             raise ValueError(f"source sheet {sheet_name!r} not found in workbook")
@@ -259,6 +356,166 @@ class PivotTable:
             showLastColumn=last_column,
         )
         return self._render()
+
+    # -- Read ---------------------------------------------------------------
+
+    @property
+    def name(self) -> str:
+        """The pivot table's name (unique within the workbook)."""
+        return self._name
+
+    @property
+    def anchor(self) -> str:
+        """The pivot's location ref (a cell before refresh, a range after)."""
+        return self._anchor
+
+    @property
+    def source(self) -> str | None:
+        """The source range as ``'Sheet!A1:D7'`` (``None`` if unknown)."""
+        if self._src_ref is None:
+            return None
+        return f"{self._src_sheet}!{self._src_ref}"
+
+    @property
+    def fields(self) -> list[str]:
+        """All source field (column header) names."""
+        return list(self._fields)
+
+    @property
+    def row_fields(self) -> list[str]:
+        """Field names on the row axis, in order."""
+        return list(self._rows)
+
+    @property
+    def column_fields(self) -> list[str]:
+        """Field names on the column axis, in order."""
+        return list(self._cols)
+
+    @property
+    def filter_fields(self) -> list[str]:
+        """Report-filter (page) field names."""
+        return list(self._filters)
+
+    @property
+    def value_fields(self) -> list[dict]:
+        """Value fields as dicts: ``{field, func, display_name, num_format}``."""
+        return [
+            {"field": nm, "func": f, "display_name": d, "num_format": fmt}
+            for nm, f, d, fmt in self._values
+        ]
+
+    @property
+    def style_name(self) -> str | None:
+        """The applied built-in style name, or ``None``."""
+        return self._style_name
+
+    def to_dict(self) -> dict:
+        """A JSON-friendly snapshot of the pivot's declarative layout."""
+        return {
+            "name": self._name,
+            "anchor": self._anchor,
+            "source": self.source,
+            "rows": self.row_fields,
+            "columns": self.column_fields,
+            "filters": self.filter_fields,
+            "values": self.value_fields,
+            "values_axis": "rows" if self._values_on_rows else "columns",
+            "style": self._style_name,
+        }
+
+    # -- Update -------------------------------------------------------------
+
+    def remove_rows(self, *names: str) -> "PivotTable":
+        """Remove one or more fields from the row axis."""
+        self._rows = [n for n in self._rows if n not in names]
+        return self._render()
+
+    def remove_columns(self, *names: str) -> "PivotTable":
+        """Remove one or more fields from the column axis."""
+        self._cols = [n for n in self._cols if n not in names]
+        return self._render()
+
+    def remove_filters(self, *names: str) -> "PivotTable":
+        """Remove one or more report-filter (page) fields."""
+        self._filters = [n for n in self._filters if n not in names]
+        return self._render()
+
+    def remove_values(self, *names: str) -> "PivotTable":
+        """Remove all value fields sourced from the given column name(s)."""
+        self._values = [v for v in self._values if v[0] not in names]
+        return self._render()
+
+    def clear_rows(self) -> "PivotTable":
+        """Remove every row-axis field."""
+        self._rows = []
+        return self._render()
+
+    def clear_columns(self) -> "PivotTable":
+        """Remove every column-axis field."""
+        self._cols = []
+        return self._render()
+
+    def clear_filters(self) -> "PivotTable":
+        """Remove every report-filter field."""
+        self._filters = []
+        return self._render()
+
+    def clear_values(self) -> "PivotTable":
+        """Remove every value field."""
+        self._values = []
+        return self._render()
+
+    def rename(self, new_name: str) -> "PivotTable":
+        """Rename the pivot table."""
+        existing = {
+            p.name
+            for p in getattr(self._dest_ws, "_pivots", [])
+            if p is not self._table
+        }
+        if new_name in existing:
+            raise ValueError(f"a pivot named {new_name!r} already exists")
+        self._name = new_name
+        if self._table is not None:
+            self._table.name = new_name
+        return self
+
+    def move(self, anchor: str) -> "PivotTable":
+        """Move the pivot's top-left anchor (resets the materialised range)."""
+        self._anchor = anchor
+        if self._table is not None:
+            self._table.location = Location(
+                ref=anchor, firstHeaderRow=1, firstDataRow=2, firstDataCol=1
+            )
+        return self
+
+    def set_grand_totals(
+        self, *, rows: bool | None = None, columns: bool | None = None
+    ) -> "PivotTable":
+        """Toggle row and/or column grand totals."""
+        if self._table is None:
+            return self
+        if rows is not None:
+            self._table.rowGrandTotals = rows
+        if columns is not None:
+            self._table.colGrandTotals = columns
+        return self
+
+    # -- Delete -------------------------------------------------------------
+
+    def delete(self) -> None:
+        """Remove this pivot table (and its cache) from the workbook.
+
+        The cache is derived from ``ws._pivots`` at save time, so dropping the
+        table here also drops its now-unreferenced cache definition.
+        """
+        pivots = getattr(self._dest_ws, "_pivots", None)
+        if pivots is not None and self._table in pivots:
+            pivots.remove(self._table)
+        wb_pivots = getattr(self._wb, "_pivots", None)
+        if wb_pivots is not None and self._table in wb_pivots:
+            wb_pivots.remove(self._table)
+        self._table = None
+        self._cache = None
 
     @staticmethod
     def _dedupe(names: Iterable[str], existing: Sequence[str]) -> list[str]:
