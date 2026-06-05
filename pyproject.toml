@@ -51,6 +51,9 @@ ignore = ["E501"]              # line length in XML macro strings
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v"
+markers = [
+    "integration: tests that require a working LibreOffice install",
+]
 
 [tool.ty.src]
 # linux_helper.py runs in LibreOffice's Python environment with UNO bindings
