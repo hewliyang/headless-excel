@@ -24,6 +24,8 @@ from headless_excel.hooks import (
     pre_sync,
 )
 from headless_excel.libre import daemon_recalc
+from headless_excel.pivot import FUNCTIONS as PIVOT_FUNCTIONS
+from headless_excel.pivot import PivotTable
 from headless_excel.proxy import (
     EXCEL_ERRORS,
     CellProxy,
@@ -69,4 +71,7 @@ __all__ = [
     "get_max_errors_displayed",
     # Formats
     "NumberFormats",
+    # Pivot tables
+    "PivotTable",
+    "PIVOT_FUNCTIONS",
 ]

@@ -23,6 +23,7 @@ from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 from headless_excel.errors import ErrorScanResult
+from headless_excel.pivot import PivotTable
 
 EXCEL_ERRORS = ERROR_CODES + ("#SPILL!", "#CALC!")
 
@@ -968,6 +969,62 @@ class WorksheetProxy:
             r.apply_style(font=Font(bold=True))
         """
         return RangeProxy(self, ref, self._on_write)
+
+    def add_pivot(
+        self,
+        source: str,
+        anchor: str = "A3",
+        name: str = "PivotTable1",
+        *,
+        rows: list[str] | None = None,
+        columns: list[str] | None = None,
+        filters: list[str] | None = None,
+        values: list[Any] | None = None,
+        style: str | None = None,
+    ) -> PivotTable:
+        """Declare a pivot table on this sheet (computed by LibreOffice on sync).
+
+        Returns a fluent :class:`~headless_excel.pivot.PivotTable` builder. The
+        pivot's aggregations are *not* computed here; the source cache is flagged
+        ``refreshOnLoad`` so ``ctx.sync()`` (LibreOffice) or Excel materialises
+        every value and grand total.
+
+        Args:
+            source: source range, e.g. ``"Data!A1:D7"`` (sheet prefix optional
+                when it matches the active sheet). The first row is the header.
+            anchor: top-left cell on this sheet where the pivot is placed.
+            name: pivot table name (unique within the workbook).
+            rows/columns/filters: optional lists of source field names to place
+                on each axis (declarative shortcut for ``.rows(...)`` etc.).
+            values: optional list of value-field specs. Each item is either a
+                field name (``"Sales"``) or a tuple
+                ``(name, func[, display_name[, num_format]])``.
+            style: optional built-in style name, e.g. ``"PivotStyleMedium9"``.
+
+        Example::
+
+            pt = (ws.add_pivot("Data!A1:D7", anchor="A3", name="ByRegion")
+                    .rows("Region").columns("Product")
+                    .values("Sales", func="sum", num_format="$#,##0")
+                    .style("PivotStyleMedium9"))
+        """
+        if self._on_write:
+            self._on_write()
+        pt = PivotTable(self._formula_ws, source=source, anchor=anchor, name=name)
+        if rows:
+            pt.rows(*rows)
+        if columns:
+            pt.columns(*columns)
+        if filters:
+            pt.filters(*filters)
+        for spec in values or []:
+            if isinstance(spec, str):
+                pt.values(spec)
+            else:
+                pt.values(*spec)
+        if style:
+            pt.style(style)
+        return pt
 
     def write(self, cell: str, data: list[list[Any]]) -> str:
         """Write 2D data starting at anchor cell. Returns actual range written.
