@@ -1,6 +1,6 @@
 [project]
 name = "headless-excel"
-version = "0.1.2"
+version = "0.1.3"
 description = "Excel automation tool for agents in headless environments"
 readme = "README.md"
 authors = [{ name = "Hew Li Yang", email = "hewliyang@u.nus.edu" }]
