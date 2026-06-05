@@ -115,6 +115,51 @@ ws['A1'] = '=B1+0.5'    # circular: A1 -> B1 -> A1, converges to A1=1, B1=0.5
 
 Without `iterate = True`, circular refs produce `#VALUE!` errors. With it enabled, LibreOffice iterates until convergence or max iterations.
 
+## Pivot Tables
+
+Declare a pivot with `ws.add_pivot(...)`. Pivots are **declared, not computed in Python** — the source cache is flagged `refreshOnLoad`, so `ctx.sync()` (LibreOffice) or Excel materialises every value and grand total. You must `ctx.sync()` to see results.
+
+Fluent form:
+
+```bash
+headless-excel eval model.xlsx "
+data = ctx.sheet('Sheet'); data.title = 'Data'
+data.range('A1:D7').values = [
+    ['Region', 'Product', 'Units', 'Sales'],
+    ['North', 'A', 10, 100], ['North', 'B', 5, 80],
+    ['South', 'A', 7, 70],  ['South', 'B', 3, 60],
+    ['North', 'A', 4, 40],  ['South', 'B', 9, 90],
+]
+
+pivot = ctx.create_sheet('Pivot')
+(pivot.add_pivot('Data!A1:D7', anchor='A3', name='ByRegion')
+      .rows('Region')
+      .columns('Product')
+      .values('Sales', func='sum', num_format='\$#,##0')
+      .style('PivotStyleMedium9'))
+
+ctx.sync()  # LibreOffice computes the aggregations
+print(pivot.range('A3:E8').dump())
+"
+```
+
+Declarative form (equivalent):
+
+```python
+pivot.add_pivot(
+    'Data!A1:D7', anchor='A3', name='ByRegion',
+    rows=['Region'], columns=['Product'],
+    values=[('Sales', 'sum', 'Total Sales', '$#,##0')],
+    style='PivotStyleMedium9',
+)
+```
+
+`filters=[...]` adds report-filter (page) fields when your source has them. All field names must match the source header row.
+
+Aggregation functions: `sum, count, countNums, average, max, min, product, stdDev, stdDevp, var, varp` (aliases like `avg`/`mean` accepted).
+
+LibreOffice may ignore a value field's number format. To force it onto the rendered cells, call `.format_values(ctx)` after building (it syncs and styles the materialised value region).
+
 ## Best Practices
 
 The whole point of Excel is that values recalculate automatically when inputs change. Avoid computing values in Python and simply writing static numbers.
@@ -175,6 +220,24 @@ range.auto_fill(                # fill formulas like Excel drag
 )
 range.clear(styles=True)        # clear values and optionally styles
 range.dump(show_formulas=False) # formatted table string for debugging
+
+# Pivot tables (computed by LibreOffice/Excel on sync)
+ws.add_pivot(                    # returns a fluent PivotTable
+    source,                     # e.g. 'Data!A1:D7' (header in first row)
+    anchor='A3',                # top-left cell on this sheet
+    name='PivotTable1',
+    rows=None, columns=None,    # optional field-name lists
+    filters=None,               # optional report-filter fields
+    values=None,                # ['Sales'] or [(name, func[, display[, fmt]])]
+    style=None,                 # e.g. 'PivotStyleMedium9'
+)
+pt.rows(*names)                 # fluent equivalents of the kwargs above
+pt.columns(*names)
+pt.filters(*names)
+pt.values(name, func='sum', display_name=None, num_format=None)
+pt.values_axis('columns')       # or 'rows' (place value labels)
+pt.style(name='PivotStyleMedium9', row_stripes=True, ...)
+pt.format_values(ctx, num_format=None)  # force value number format post-sync
 
 # CellProxy
 cell.value                      # get materialized value / set value
