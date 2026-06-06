@@ -183,7 +183,7 @@ class PivotTable:
         self._dest_ws = dest_ws
         self._wb = wb
         self._table = table
-        self._cache = getattr(table, "cache", None)
+        self._cache = table.cache
         self._name = table.name
         self._cache_id = table.cacheId
         loc = table.location
@@ -467,11 +467,7 @@ class PivotTable:
 
     def rename(self, new_name: str) -> "PivotTable":
         """Rename the pivot table."""
-        existing = {
-            p.name
-            for p in getattr(self._dest_ws, "_pivots", [])
-            if p is not self._table
-        }
+        existing = {p.name for p in self._dest_ws._pivots if p is not self._table}
         if new_name in existing:
             raise ValueError(f"a pivot named {new_name!r} already exists")
         self._name = new_name
@@ -508,12 +504,10 @@ class PivotTable:
         The cache is derived from ``ws._pivots`` at save time, so dropping the
         table here also drops its now-unreferenced cache definition.
         """
-        pivots = getattr(self._dest_ws, "_pivots", None)
-        if pivots is not None and self._table in pivots:
-            pivots.remove(self._table)
-        wb_pivots = getattr(self._wb, "_pivots", None)
-        if wb_pivots is not None and self._table in wb_pivots:
-            wb_pivots.remove(self._table)
+        if self._table in self._dest_ws._pivots:
+            self._dest_ws._pivots.remove(self._table)
+        if self._table in self._wb._pivots:
+            self._wb._pivots.remove(self._table)
         self._table = None
         self._cache = None
 

@@ -1034,8 +1034,9 @@ class WorksheetProxy:
         underlying openpyxl ``TableDefinition`` objects (including pivots loaded
         from an existing file), so they can be read, mutated, or deleted.
         """
-        tables = getattr(self._formula_ws, "_pivots", None) or []
-        return [PivotTable._adopt(self._formula_ws, t) for t in tables]
+        return [
+            PivotTable._adopt(self._formula_ws, t) for t in self._formula_ws._pivots
+        ]
 
     def get_pivot(self, name: str) -> PivotTable:
         """Return the pivot table with the given name on this sheet.
@@ -1043,7 +1044,7 @@ class WorksheetProxy:
         Raises:
             KeyError: if no pivot with that name exists on the sheet.
         """
-        for t in getattr(self._formula_ws, "_pivots", None) or []:
+        for t in self._formula_ws._pivots:
             if t.name == name:
                 return PivotTable._adopt(self._formula_ws, t)
         raise KeyError(
@@ -1058,8 +1059,7 @@ class WorksheetProxy:
         """
         if self._on_write:
             self._on_write()
-        tables = getattr(self._formula_ws, "_pivots", None) or []
-        for t in tables:
+        for t in self._formula_ws._pivots:
             if t.name == name:
                 PivotTable._adopt(self._formula_ws, t).delete()
                 return True
