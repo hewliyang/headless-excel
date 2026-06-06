@@ -9,6 +9,7 @@ import pytest
 
 from headless_excel import PivotTable, create
 from headless_excel.pivot import _resolve_func, _split_source
+from headless_excel.proxy import WorksheetProxy
 
 
 def _seed(ctx):
@@ -98,6 +99,146 @@ def test_declarative_form(tmp_path):
         assert table.dataFields[1].subtotal == "average"
         assert table.dataFields[1].name == "Avg Units"
         assert table.pivotTableStyleInfo.name == "PivotStyleMedium9"
+
+
+def _build_two(ctx):
+    _seed(ctx)
+    p = ctx.create_sheet("Pivot")
+    p.add_pivot(
+        "Data!A1:D7",
+        anchor="A3",
+        name="PT",
+        rows=["Region"],
+        columns=["Product"],
+        values=[("Sales", "sum", "Total", "$#,##0")],
+        filters=["Units"],
+        style="PivotStyleMedium9",
+    )
+    p.add_pivot(
+        "Data!A1:D7", anchor="H3", name="PT2", rows=["Product"], values=["Sales"]
+    )
+    return p
+
+
+# -- Read --------------------------------------------------------------------
+
+
+def test_read_pivots_and_get(tmp_path):
+    with create(str(tmp_path / "p.xlsx"), overwrite=True) as ctx:
+        p = _build_two(ctx)
+        assert [pt.name for pt in p.pivots] == ["PT", "PT2"]
+        pt = p.get_pivot("PT")
+        assert pt.row_fields == ["Region"]
+        assert pt.column_fields == ["Product"]
+        assert pt.filter_fields == ["Units"]
+        assert pt.value_fields == [
+            {
+                "field": "Sales",
+                "func": "sum",
+                "display_name": "Total",
+                "num_format": "$#,##0",
+            }
+        ]
+        assert pt.style_name == "PivotStyleMedium9"
+        assert pt.source == "Data!A1:D7"
+        assert pt.fields == ["Region", "Product", "Units", "Sales"]
+        with pytest.raises(KeyError):
+            p.get_pivot("Missing")
+
+
+def test_read_after_reload(tmp_path):
+    path = tmp_path / "p.xlsx"
+    with create(str(path), overwrite=True, auto_sync=False) as ctx:
+        _build_two(ctx)
+        ctx._workbook.save(str(path))
+
+    wb = openpyxl.load_workbook(path)
+    p = WorksheetProxy(wb["Pivot"])
+    assert {pt.name for pt in p.pivots} == {"PT", "PT2"}
+    snap = p.get_pivot("PT").to_dict()
+    assert snap["rows"] == ["Region"]
+    assert snap["values"][0]["func"] == "sum"
+    assert snap["values"][0]["num_format"] == "$#,##0"
+
+
+# -- Update ------------------------------------------------------------------
+
+
+def test_update_remove_and_clear(tmp_path):
+    with create(str(tmp_path / "p.xlsx"), overwrite=True) as ctx:
+        p = _build_two(ctx)
+        pt = p.get_pivot("PT")
+        pt.remove_columns("Product").remove_filters("Units")
+        assert pt.column_fields == []
+        assert pt.filter_fields == []
+        # underlying table reflects the change
+        table = p._formula_ws._pivots[0]
+        assert table.colFields is None or all(f.x != 1 for f in table.colFields)
+        pt.clear_values().values("Units", "average", "Avg")
+        assert [v["field"] for v in pt.value_fields] == ["Units"]
+        assert pt.value_fields[0]["func"] == "average"
+
+
+def test_update_rename_move_grand_totals(tmp_path):
+    with create(str(tmp_path / "p.xlsx"), overwrite=True) as ctx:
+        p = _build_two(ctx)
+        pt = p.get_pivot("PT")
+        pt.rename("Renamed").move("A40").set_grand_totals(rows=False, columns=False)
+        assert pt.name == "Renamed"
+        table = next(t for t in p._formula_ws._pivots if t.name == "Renamed")
+        assert table.location.ref == "A40"
+        assert table.rowGrandTotals is False
+        assert table.colGrandTotals is False
+        # duplicate names are rejected
+        with pytest.raises(ValueError):
+            p.get_pivot("PT2").rename("Renamed")
+
+
+def test_update_persists_after_reload(tmp_path):
+    path = tmp_path / "p.xlsx"
+    with create(str(path), overwrite=True, auto_sync=False) as ctx:
+        _build_two(ctx)
+        ctx._workbook.save(str(path))
+
+    wb = openpyxl.load_workbook(path)
+    p = WorksheetProxy(wb["Pivot"])
+    p.get_pivot("PT").rename("Renamed").remove_columns("Product")
+    wb.save(str(path))
+
+    wb2 = openpyxl.load_workbook(path)
+    p2 = WorksheetProxy(wb2["Pivot"])
+    assert {pt.name for pt in p2.pivots} == {"Renamed", "PT2"}
+    assert p2.get_pivot("Renamed").column_fields == []
+
+
+# -- Delete ------------------------------------------------------------------
+
+
+def test_delete_pivot(tmp_path):
+    with create(str(tmp_path / "p.xlsx"), overwrite=True) as ctx:
+        p = _build_two(ctx)
+        assert p.remove_pivot("PT2") is True
+        assert [pt.name for pt in p.pivots] == ["PT"]
+        assert p.remove_pivot("Nope") is False
+        # delete via the object too
+        p.get_pivot("PT").delete()
+        assert p.pivots == []
+
+
+def test_delete_drops_cache_after_reload(tmp_path):
+    path = tmp_path / "p.xlsx"
+    with create(str(path), overwrite=True, auto_sync=False) as ctx:
+        _build_two(ctx)
+        ctx._workbook.save(str(path))
+
+    wb = openpyxl.load_workbook(path)
+    p = WorksheetProxy(wb["Pivot"])
+    assert p.remove_pivot("PT") is True
+    wb.save(str(path))
+
+    wb2 = openpyxl.load_workbook(path)
+    p2 = WorksheetProxy(wb2["Pivot"])
+    assert [pt.name for pt in p2.pivots] == ["PT2"]
 
 
 @pytest.mark.integration

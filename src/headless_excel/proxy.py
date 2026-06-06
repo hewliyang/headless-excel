@@ -1026,6 +1026,45 @@ class WorksheetProxy:
             pt.style(style)
         return pt
 
+    @property
+    def pivots(self) -> list[PivotTable]:
+        """All pivot tables anchored on this sheet, wrapped for inspection.
+
+        Each call returns fresh :class:`PivotTable` wrappers adopting the
+        underlying openpyxl ``TableDefinition`` objects (including pivots loaded
+        from an existing file), so they can be read, mutated, or deleted.
+        """
+        return [
+            PivotTable._adopt(self._formula_ws, t) for t in self._formula_ws._pivots
+        ]
+
+    def get_pivot(self, name: str) -> PivotTable:
+        """Return the pivot table with the given name on this sheet.
+
+        Raises:
+            KeyError: if no pivot with that name exists on the sheet.
+        """
+        for t in self._formula_ws._pivots:
+            if t.name == name:
+                return PivotTable._adopt(self._formula_ws, t)
+        raise KeyError(
+            f"no pivot table named {name!r} on sheet {self._formula_ws.title!r}"
+        )
+
+    def remove_pivot(self, name: str) -> bool:
+        """Delete the named pivot table (and its cache) from this sheet.
+
+        Returns:
+            ``True`` if a pivot was removed, ``False`` if none matched.
+        """
+        if self._on_write:
+            self._on_write()
+        for t in self._formula_ws._pivots:
+            if t.name == name:
+                PivotTable._adopt(self._formula_ws, t).delete()
+                return True
+        return False
+
     def write(self, cell: str, data: list[list[Any]]) -> str:
         """Write 2D data starting at anchor cell. Returns actual range written.
 
